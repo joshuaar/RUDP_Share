@@ -17,13 +17,15 @@ object wireCodes {
   def sendreq(resource:String,ip:String,port:Int):String ={
     return s"::$resource:$ip:$port"
   }
+  
   def getLocalPort():Int = {
     val s= new ReliableServerSocket(0)
     val port = s.getLocalPort()
     s.close()
     return port
   }
-  def copy(in:InputStream, out:OutputStream) {
+  
+  def copy(in:InputStream, out:OutputStream):Int = {
         val buf = new Array[Byte](8192)
         var len = 0;
         len = in.read(buf)
@@ -32,9 +34,39 @@ object wireCodes {
             out.write(buf, 0, len)
             written+=len
             //println(s"Sent $len bytes")
-            len = in.read(buf)
+            try{
+              len = in.read(buf)
+            }
+            catch{
+              case s:SocketException => return written
+            }
         }
+        return written
     }
+  
+  /**
+   * sends/receives size of file ahead of file transfer
+   * send = True => send the meta info
+   * send = False => receive meta info
+   */
+  def transferMetaInfo(s:ReliableSocket,sz:Long = -1):Long={
+    println(sz)
+    val in = new BufferedReader(new InputStreamReader(s.getInputStream()))
+    val out = new PrintWriter(s.getOutputStream(), true)
+    println(sz == -1)
+    if(sz != -1){
+      if(in.readLine() != "::") {
+        throw new SocketException("Unexpected signal from remote")
+      }
+      out.println(sz)
+      return 0
+    }
+    out.println("::")
+    val size = in.readLine()
+    println(s"Got size $size")
+    return size.toLong
+  }
+  
 }
 
 //Sends messages and files to remote
@@ -61,13 +93,14 @@ class rudpListener(s:ReliableSocket,parent:ActorRef) extends Actor{
     }
   }
   def cmdListen:Receive = {
-    //Listens for lines of strings
+    //LISTEN FOR COMMANDS
     case LISTEN => {
       println("Listener Online")
       val data = in.readLine()
       data match {
         case wireCodes.FT_REQ(id,host,port) => {
-          parent ! SEND(id,host,port.toInt) //Initiate request
+          val f = new File(id)
+          parent ! SEND(id,host,port.toInt,f.length) //Got a request for a resource
           println(s"Recieved a get request from $host, sending to handler")
         }
         case wireCodes.FT_STOP => {
@@ -107,12 +140,17 @@ class fileListener(lp:Int,destination:String) extends Actor{
     case s:ReliableSocket => {
       println("File getter is connected")
       Thread.sleep(500)
+      val size = wireCodes.transferMetaInfo(s)
       val buffer = new Array[Byte](100)
       val f = new File(destination)
       val fileOut = new FileOutputStream(f)
       val fileIn = s.getInputStream()
       println("Started file receiving")
-      wireCodes.copy(fileIn,fileOut)
+      val written = wireCodes.copy(fileIn,fileOut)
+      
+      if(written != size){
+        println("Transfer not fully completed")
+      }
       s.close()
       fileOut.close()
       println("Finished file reception")
@@ -122,7 +160,7 @@ class fileListener(lp:Int,destination:String) extends Actor{
   }
 }
 
-class fileSender(filePath:String,host:String,port:Int,localHost:InetAddress,localPort:Int) extends Actor{
+class fileSender(filePath:String,host:String,port:Int,localHost:InetAddress,localPort:Int,size:Long) extends Actor{
   val sock = new ReliableSocket(host,port,localHost,localPort)
   println("file sender is connected")
   self ! sock
@@ -131,6 +169,7 @@ class fileSender(filePath:String,host:String,port:Int,localHost:InetAddress,loca
   def receive = {
     case s:ReliableSocket => {
       Thread.sleep(500)
+      wireCodes.transferMetaInfo(s, size)
       val buffer = new Array[Byte](2048)
       val f = new File(filePath)
       val fileIn = new FileInputStream(f)
@@ -205,12 +244,12 @@ class rudpActor(lp:Int) extends Actor{
 
     }
     
-    case SEND(resource,host,port) => { //got a request from remote for resource
+    case SEND(resource,host,port,size) => { //got a request from remote for resource
       val lPort = wireCodes.getLocalPort()
       //Hole punch code goes here
       //
       println("Got request from remote for a resource")
-      val fileSender = context.actorOf(Props(new fileSender(resource,host,port,localHost,lPort)))
+      val fileSender = context.actorOf(Props(new fileSender(resource,host,port,localHost,lPort,size)))
     }
   }
 }

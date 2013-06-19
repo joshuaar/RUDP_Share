@@ -4,7 +4,7 @@ import java.io._
 import java.net._
 import java.security.MessageDigest
 
-object Resume {
+object Chunks {
   val md = MessageDigest.getInstance("SHA")
   val CHUNK_INF = ":ci(.*):(.*):(.*)".r//nBytes,offset,digest
   type Chunk = (Array[Byte],Long,String)//Data,offset,digest

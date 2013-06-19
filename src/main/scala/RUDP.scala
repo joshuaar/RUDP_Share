@@ -1,3 +1,4 @@
+package share.protocol
 import chat.msg._
 import net.rudp._
 import java.net._
@@ -34,12 +35,8 @@ object wireCodes {
             out.write(buf, 0, len)
             written+=len
             //println(s"Sent $len bytes")
-            try{
-              len = in.read(buf)
-            }
-            catch{
-              case s:SocketException => return written
-            }
+            len = in.read(buf)
+
         }
         return written
     }

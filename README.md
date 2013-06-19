@@ -9,6 +9,9 @@ This is a work in progress. The goal is to enable a Dropbox-like service where f
 
 Currently working on supporting file transfer resume...
 
+##Features
+Can establish a connection and transfer files.
+
 ## More Info
 http://en.wikipedia.org/wiki/UDP_hole_punching
 

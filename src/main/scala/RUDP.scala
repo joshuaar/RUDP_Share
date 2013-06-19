@@ -10,8 +10,8 @@ import scala.concurrent.duration._
 
 
 object wireCodes {
-  val FT_CON = ":c(.*):(.*)".r
-  val FT_REQ = "::(.*):(.*):(.*)".r//Send this plus to request a resource from server
+  val FT_CON = ":c(.*):(.*)".r // Address:Port
+  val FT_REQ = "::(.*):(.*):(.*)".r//resource:IP:Port
   val FT_RDY = ":RDY" //Send this to host when ready for file
   val FT_STOP = ":STP"
   def sendreq(resource:String,ip:String,port:Int):String ={
@@ -46,8 +46,14 @@ object wireCodes {
   
   /**
    * sends/receives size of file ahead of file transfer
-   * send = True => send the meta info
-   * send = False => receive meta info
+   * size = -1 => receive meta info from socket
+   * size /= -1 => send meta info located in variable size
+   * 
+   * Usage client:
+   * 	val fromServer = transferMetaInfo(s) // fromServer == 21305
+   * 
+   * Usage server:
+   * 	transferMetaInfo(s,21305) // Size of file is 21305 bytes
    */
   def transferMetaInfo(s:ReliableSocket,sz:Long = -1):Long={
     println(sz)
@@ -94,6 +100,7 @@ class rudpListener(s:ReliableSocket,parent:ActorRef) extends Actor{
   }
   def cmdListen:Receive = {
     //LISTEN FOR COMMANDS
+    //	Program new behaviors here, translate from wire codes to actor instructions
     case LISTEN => {
       println("Listener Online")
       val data = in.readLine()
@@ -128,7 +135,7 @@ class fileListener(lp:Int,destination:String) extends Actor{
   val sock:ReliableSocket = null
   println("File getter beginning connection")
   //Failure to connect, or connect
-  try{ self ! Await.result(future, 60 second).asInstanceOf[ReliableSocket] }
+  try{ self ! Await.result(future, 10 second).asInstanceOf[ReliableSocket] }
   catch{ 
     case t:TimeoutException => {
       println("File listen timeout")
@@ -254,16 +261,30 @@ class rudpActor(lp:Int) extends Actor{
   }
 }
 
+object api {
+  val system = ActorSystem("RUDPSystem")
+  def makeServer(name:String,port:Int):ActorRef = {
+	  val serv = system.actorOf(Props(new rudpActor(port)), name = name)
+	  serv ! LISTEN
+	  return serv
+  }
+  def makeClient(name:String,port:Int,host:String,remotePort:Int):ActorRef = {
+    val cli = system.actorOf(Props(new rudpActor(port)), name = name)
+    cli ! CONNECT(host,remotePort)
+    return cli
+  }
+}
+
 object rudp extends App {
   
-  val system = ActorSystem("ChatSystem")
-  val serv = system.actorOf(Props(new rudpActor(6004)), name = "serv")
-  val cli = system.actorOf(Props(new rudpActor(6005)), name = "cli")
-  serv ! LISTEN
+  //val system = ActorSystem("ChatSystem")
+  val serv = api.makeServer("serv",6004)
+  val cli = api.makeClient("cli",6005,"localhost",6004)
+ // serv ! LISTEN
   Thread.sleep(500)
   println("Attempting connection")
-  cli ! CONNECT("localhost",6004)
-  println("Testing Message sending")
+ // cli ! CONNECT("localhost",6004)
+ // println("Testing Message sending")
   Thread.sleep(1000)
   
   //Test send message
@@ -271,7 +292,7 @@ object rudp extends App {
   serv ! SENDMESSAGE("Message2")
   
   //Test file request
-  cli ! GET("/home/josh/UDPChat/jars/UDPChat.jar","/home/josh/test2")
-  serv ! GET("/home/josh/CIM/Research/labdata/jaricher/newDecipher/Data for Database/Array Results/First Chip Disease Dataset/llnl.csv","/home/josh/test3")
+  cli ! GET("/home/josh/test","/home/josh/testCopy")
+  //serv ! GET("/home/josh/CIM/Research/labdata/jaricher/newDecipher/Data for Database/Array Results/First Chip Disease Dataset/llnl.csv","/home/josh/test3")
   
 }

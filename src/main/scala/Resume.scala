@@ -3,6 +3,10 @@ import net.rudp._
 import java.io._
 import java.net._
 import java.security.MessageDigest
+import Stream._
+import akka.actor.ActorSystem
+import scala.concurrent._
+import scala.concurrent.duration._
 
 object Chunks {
   val md = MessageDigest.getInstance("SHA")
@@ -76,6 +80,14 @@ object Chunks {
     }
   }
   
+  def sendFile(os:OutputStream,f:RandomAccessFile,offset:Long) = {
+    f.seek(offset)
+    val fin = new FileInputStream(f.getFD())
+    wireCodes.copy(fin, os)
+  }
+  
+  //GetFile
+  
   def sendChunkInfo(os:OutputStream,ch:Chunk) = {
     val out = new PrintWriter(os, true)
     val nBytes = ch._1.length
@@ -146,6 +158,11 @@ object Chunks {
   }
 }
 
+
+class chunkFileGetter(s:Socket) {
+  
+}
+
 /**
  * Sends chunks in files across RUDP (or any socket). Does SHA hash checking to ensure accurate transfer.
  * Methods:
@@ -153,10 +170,20 @@ object Chunks {
  *  						  Throws SocketException if connection is interrupted , gives offset so transfer can be renewed
  * 	
  */
-class chunkFileSender(s:Socket) {
+class chunkFileSender(s:Socket,chunkSize:Int=1024000) {
   val in = s.getInputStream()
   val out = s.getOutputStream()
-  def send(resource:String) = {
+  def chunkinator(f:RandomAccessFile,offset:Long):Stream[Chunks.Chunk] = {
+    //readChunk(f:RandomAccessFile,nBytes:Int, offset:Long = 0):Chunk
+    Chunks.readChunk(f,chunkSize,offset) #:: chunkinator(f,offset+chunkSize)
+  }
+  def send(resource:String,offset:Long=0):Int = {
+    val f = new RandomAccessFile(resource,"rw")
+    f.seek(offset)
+    return 1
+    
+    
+    
     //0: Fix get/set cmd so errors can easily be built in later
     //1: sendFileInfo(file)
     //2: getAcc("GotFileInfo")

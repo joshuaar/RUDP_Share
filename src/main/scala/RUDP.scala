@@ -12,11 +12,14 @@ import scala.concurrent.duration._
 
 object wireCodes {
   val FT_CON = ":c(.*):(.*)".r // Address:Port
-  val FT_REQ = "::(.*):(.*):(.*)".r//resource:IP:Port
+  val FT_REQ = "::(.*):(.*):(.*):(.*)".r//resource:IP:Port:offset
   val FT_RDY = ":RDY" //Send this to host when ready for file
   val FT_STOP = ":STP"
-  def sendreq(resource:String,ip:String,port:Int):String ={
-    return s"::$resource:$ip:$port"
+    
+  def sendreq(req:GET,ip:String,port:Int):String ={
+    val resource = req.r
+    val offset  = req.offset
+    return s"::$resource:$ip:$port:$offset"
   }
   
   def getLocalPort():Int = {
@@ -26,11 +29,12 @@ object wireCodes {
     return port
   }
   
-  def copy(in:InputStream, out:OutputStream):Int = {
+  def copy(in:InputStream, out:OutputStream):Long = {
         val buf = new Array[Byte](8192)
         var len = 0;
         len = in.read(buf)
-        var written = 0
+        var written:Long = 0
+        try{
         while (len != -1) {
             out.write(buf, 0, len)
             written+=len
@@ -38,7 +42,12 @@ object wireCodes {
             len = in.read(buf)
 
         }
-        return written
+        }
+        catch{
+          case s:SocketException => return written
+        }
+        println("Stream copied")
+        return -1
     }
   
   /**
@@ -85,110 +94,6 @@ class rudpSender(s:ReliableSocket,parent:ActorRef) extends Actor{
   }
 }
 
-//Listens for messages and files from remote
-class rudpListener(s:ReliableSocket,parent:ActorRef) extends Actor{
-  import context._
-  var in = new BufferedReader(new InputStreamReader(s.getInputStream()))
-  def receive = {
-    case LISTEN => {
-      become(cmdListen)
-      self ! LISTEN
-    }
-  }
-  def cmdListen:Receive = {
-    //LISTEN FOR COMMANDS
-    //	Program new behaviors here, translate from wire codes to actor instructions
-    case LISTEN => {
-      println("Listener Online")
-      val data = in.readLine()
-      data match {
-        case wireCodes.FT_REQ(id,host,port) => {
-          val f = new File(id)
-          parent ! SEND(id,host,port.toInt,f.length) //Got a request for a resource
-          println(s"Recieved a get request from $host, sending to handler")
-        }
-        case wireCodes.FT_STOP => {
-          println("stopped listening on request from remote")
-        }
-        case wireCodes.FT_CON(ip,port) => {
-          println("Now I got the connection information from remote")
-          parent ! (ip,port)
-        }
-        case s:String => {
-          parent ! RECVDMESSAGE(s)
-          println("Sent unknown message to handler")
-        }
-      }
-    }
-  }//End cmdListener
-}
-
-class fileListener(lp:Int,destination:String) extends Actor{
-  import context._
-  
-  //ServerSocket attempt a listen
-  val serverSocket = new ReliableServerSocket(lp)
-  val future = Future{ serverSocket.accept() }
-  val sock:ReliableSocket = null
-  println("File getter beginning connection")
-  //Failure to connect, or connect
-  try{ self ! Await.result(future, 10 second).asInstanceOf[ReliableSocket] }
-  catch{ 
-    case t:TimeoutException => {
-      println("File listen timeout")
-      self ! PoisonPill // kill
-      }
-    }
-  //READ FILES FROM SOCKETS
-  def receive = {
-    case s:ReliableSocket => {
-      println("File getter is connected")
-      Thread.sleep(500)
-      val size = wireCodes.transferMetaInfo(s)
-      val buffer = new Array[Byte](100)
-      val f = new File(destination)
-      val fileOut = new FileOutputStream(f)
-      val fileIn = s.getInputStream()
-      println("Started file receiving")
-      val written = wireCodes.copy(fileIn,fileOut)
-      
-      if(written != size){
-        println("Transfer not fully completed")
-      }
-      s.close()
-      fileOut.close()
-      println("Finished file reception")
-      self ! PoisonPill
-    }
-    case _ => println("Received a message")
-  }
-}
-
-class fileSender(filePath:String,host:String,port:Int,localHost:InetAddress,localPort:Int,size:Long) extends Actor{
-  val sock = new ReliableSocket(host,port,localHost,localPort)
-  println("file sender is connected")
-  self ! sock
-  
-  //WRITE FILES TO SOCKETS
-  def receive = {
-    case s:ReliableSocket => {
-      Thread.sleep(500)
-      wireCodes.transferMetaInfo(s, size)
-      val buffer = new Array[Byte](2048)
-      val f = new File(filePath)
-      val fileIn = new FileInputStream(f)
-      val fileOut = s.getOutputStream()
-      wireCodes.copy(fileIn,fileOut)
-      fileOut.close()
-      fileIn.close() // close file
-      s.close()
-      //Now file has been sent
-      println("Finished file sending")
-      self ! PoisonPill
-    }
-  }
-}
-
 /**
 * Starts listening on a given port
 */
@@ -228,34 +133,121 @@ class rudpActor(lp:Int) extends Actor{
   def connected:Receive = {
     case RECVDMESSAGE(s) => {
       println("I got a message on the wire!: "+s)
-      listener ! LISTEN
+      //listener ! LISTEN
     }
     case SENDMESSAGE(m) => {
       println("outer sending message")
       send.println(m)
       println("outer sent")
     }
-    case GET(resource,destination) => {
-      
+    case req:GET => {
+      //GET(r:String,destination:String,offset:Long=0)
+      val resource = req.r
+      val destination = req.destination
       //Determine from STUN server which IP and port to connect on
       val localPort = wireCodes.getLocalPort()
       val lh = localHost.getHostName() 
       
       //Initialize listener
-      val fileGetter = context.actorOf(Props(new fileListener(localPort,destination)))
+      val fileGetter = context.actorOf(Props(new fileListener(localPort,req)))
       
-      send.println(wireCodes.sendreq(resource,lh,localPort)) // send a request for a resource
+      send.println(wireCodes.sendreq(req,lh,localPort)) // send a request for a resource
 
     }
     
-    case SEND(resource,host,port,size) => { //got a request from remote for resource
+    case s:SEND => { //got a request from remote for resource
       val lPort = wireCodes.getLocalPort()
       //Hole punch code goes here
       //
       println("Got request from remote for a resource")
-      val fileSender = context.actorOf(Props(new fileSender(resource,host,port,localHost,lPort,size)))
+      val fileSender = context.actorOf(Props(new fileSender(lPort,s,localHost)))
     }
   }
+}
+
+class fileSender(lPort:Int,send:SEND,localHost:InetAddress) extends Actor{
+  val sock = new ReliableSocket(send.host,send.port,localHost,lPort)
+  println("file sender is connected")
+  self ! sock
+  
+  //WRITE FILES TO SOCKETS
+  def receive = {
+    case s:ReliableSocket => {
+      val ft = new FileTransfer(s)
+      ft.send(send.resource,send.offset)
+      self ! PoisonPill
+    }
+  }
+}
+
+class fileListener(lp:Int,req:GET) extends Actor{
+  import context._
+  val destination = req.destination
+  //ServerSocket attempt a listen
+  val serverSocket = new ReliableServerSocket(lp)
+  val future = Future{ serverSocket.accept() }
+  val sock:ReliableSocket = null
+  println("File receiver beginning connection")
+  //Failure to connect, or connect
+  try{ self ! Await.result(future, 10 second).asInstanceOf[ReliableSocket] }
+  catch{ 
+    case t:TimeoutException => {
+      println("File listen timeout")
+      self ! PoisonPill // kill
+      }
+    }
+  //READ FILES FROM SOCKETS
+  def receive = {
+    case s:ReliableSocket => {
+      println("File Receiver is connected")
+      val ft = new FileTransfer(s)
+      val newOff = ft.get(destination,"",req.offset)
+      if(newOff != -1)
+    	  parent ! GET(req.r,destination,newOff)
+      self ! PoisonPill
+    }
+    case _ => println("Received a message")
+  }
+}
+
+//Listens for messages and files from remote
+class rudpListener(s:ReliableSocket,parent:ActorRef) extends Actor{
+  import context._
+  var in = new BufferedReader(new InputStreamReader(s.getInputStream()))
+  def receive = {
+    case LISTEN => {
+      become(cmdListen)
+      self ! LISTEN
+    }
+  }
+  def cmdListen:Receive = {
+    //LISTEN FOR COMMANDS
+    //	Program new behaviors here, translate from wire codes to actor instructions
+    case LISTEN => {
+      println("Listener Online")
+      val data = in.readLine()
+      data match {
+        case wireCodes.FT_REQ(id,host,port,offset) => {
+          val f = new File(id)
+          parent ! SEND(id,host,port.toInt,offset.toLong) //Got a request for a resource
+          println(s"Recieved a get request from $host, sending to handler")
+        }
+        case wireCodes.FT_STOP => {
+          println("stopped listening on request from remote")
+        }
+        case wireCodes.FT_CON(ip,port) => {
+          println("Now I got the connection information from remote")
+          parent ! (ip,port)
+        }
+        case s:String => {
+          parent ! RECVDMESSAGE(s)
+          println("Sent unknown message to handler")
+        }
+      }
+      self ! LISTEN
+      println("Listener sent reactivation signal")
+    }
+  }//End cmdListener
 }
 
 object api {
@@ -289,7 +281,8 @@ object rudp extends App {
   serv ! SENDMESSAGE("Message2")
   
   //Test file request
-  cli ! GET("/home/josh/test","/home/josh/testCopy")
-  //serv ! GET("/home/josh/CIM/Research/labdata/jaricher/newDecipher/Data for Database/Array Results/First Chip Disease Dataset/llnl.csv","/home/josh/test3")
+  //cli ! GET("/home/josh/test","/home/josh/testCopy")
+  //cli ! GET("/home/josh/test2","/home/josh/testCopy")
+  serv ! GET("/home/josh/CIM/Research/labdata/jaricher/newDecipher/Data for Database/Array Results/First Chip Disease Dataset/llnl.csv","/home/josh/test3")
   
 }

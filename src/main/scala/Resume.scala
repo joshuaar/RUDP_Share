@@ -4,6 +4,7 @@ import java.io._
 import java.net._
 import scala.concurrent._
 import scala.concurrent.duration._
+import scala.concurrent.ExecutionContext.Implicits.global
 import java.security.MessageDigest
 import Stream._
 import akka.actor.ActorSystem
@@ -17,6 +18,7 @@ case class ChunkInfo(nBytes:Long,offset:Long,digest:String) extends Info {
   val _3 = digest
 }
 case class AccInfo(msg:String) extends Info
+case class ReqInfo(resource:String,offset:Long) extends Info
 case class FileInfo(nBytes:Long,ChunkSize:Int,offset:Long,signature:String) extends Info {
   val _1 = nBytes
   val _2 = ChunkSize
@@ -34,7 +36,7 @@ object Chunks {
   
   //type FileInfo = (Long,Int,Long,String)//nBytes,ChunkSize,offset,signature
   val FILE_INF = ":fLi(.*):(.*):(.*):(.*)".r//nBytes,ChunkSize,offset,signature
-  
+  val REQ_INF = ":fGe(.*):(.*)".r
   val ACC = ":AkC(.*)".r
   
   def getSignature(f:RandomAccessFile):String = {
@@ -71,10 +73,15 @@ object Chunks {
   def sendAcc(msg:String="AOK",os:OutputStream) = {
     val out = new PrintWriter(os, true)
     out.println(":AkC"+msg)
+    println("Ack sent")
   }
-  def getAcc(is:InputStream):Info = {
+  def getAcc(is:InputStream,timeout:Int=10):AccInfo = {
     val in = new BufferedReader(new InputStreamReader(is))
-    in.readLine() match {
+    val future = Future {
+      in.readLine()
+    }
+    val accTxt = Await.result(future, timeout second).asInstanceOf[String]
+    accTxt match {
       case ACC(msg) => {
         return AccInfo(msg)
       }
@@ -91,6 +98,24 @@ object Chunks {
     out.println(s":fLi$nBytes:$chunkSize:$offset:$sig")
   }
   
+  def sendReqInfo(resource:String,os:OutputStream, offset:Long=0)={
+    val out = new PrintWriter(os, true)
+    out.println(s":fGe$resource:$offset")
+  }
+  
+  def getReqInfo(is:InputStream):ReqInfo = {
+    val in = new BufferedReader(new InputStreamReader(is))
+    in.readLine() match {
+      case REQ_INF(resource,offset) => {
+        return ReqInfo(resource,offset.toLong)
+      }
+      case _ =>{
+        throw new IOException("Unrecognized File Info Format")
+      }
+    }
+  }
+  
+  
   def getFileInfo(is:InputStream):Info = {
     val in = new BufferedReader(new InputStreamReader(is))
     in.readLine() match {
@@ -103,12 +128,51 @@ object Chunks {
     }
   }
   
-  def sendFile(os:OutputStream,f:RandomAccessFile,offset:Long) = {
+  def sendFile(os:OutputStream,f:RandomAccessFile,offset:Long):Boolean = {
     f.seek(offset)
     val fin = new FileInputStream(f.getFD())
+    try{
     wireCodes.copy(fin, os)
+    }
+    catch{
+      case s:SocketException => return false
+    }
+    return true
   }
   
+  def getFile(is:InputStream,f:RandomAccessFile,offset:Long,fileSize:Long,bufSize:Int=2048):Long = {
+    f.seek(offset)
+    val fout = new FileOutputStream(f.getFD())
+    wireCodes.copy(is,fout)
+//    val fp = f.getFilePointer()
+//    println(s"offset set at: $fp, arg received: offset")
+//    var gotten:Long = 0
+//    var len:Int = 0
+//    val buf = new Array[Byte](bufSize)
+//    try{
+//    len = is.read(buf)
+//    val nBytesToGet = fileSize - offset
+//    println(s"File size: $fileSize, offset: $offset")
+//    val bytePercent:Long = nBytesToGet/100
+//    var nextPercent:Long = bytePercent // add 1% of the bytes to the offset
+//    while(offset+gotten != fileSize && len != -1) {
+//      f.write(buf,0,len)
+//      gotten+=len
+//      //if(gotten > nextPercent){
+//        //print("=")
+//        //nextPercent+=bytePercent
+//        var bytesLeft = fileSize - offset - gotten
+//        //println(s"bytes left = $bytesLeft")
+//      //}
+//      len=is.read(buf)
+//    }
+//    }
+//    catch{
+//      case s:SocketException => return offset+gotten//incomplete
+//    }
+//    f.close()
+//    return -1//Success
+  }
   //GetFile
   
   def sendChunkInfo(os:OutputStream,ch:Chunk) = {
@@ -176,42 +240,54 @@ object Chunks {
  
 }
 
-
-/**
- * Sends chunks in files across RUDP (or any socket). Does SHA hash checking to ensure accurate transfer.
- * Methods:
- * 	send(RandomAccessFile) -> Sends a file in chunks, verifying recept
- *  						  Throws SocketException if connection is interrupted , gives offset so transfer can be renewed
- * 	
- */
-class chunkFileSender(s:Socket,chunkSize:Int=1024000) {
+class FileTransfer(s:Socket) {
   val in = s.getInputStream()
   val out = s.getOutputStream()
-
-  def chunkinator(f:RandomAccessFile,offset:Long):Stream[Chunks.Chunk] = {
-    //readChunk(f:RandomAccessFile,nBytes:Int, offset:Long = 0):Chunk
-    Chunks.readChunk(f,chunkSize,offset) #:: chunkinator(f,offset+chunkSize)
+  println("FileTransfer object created")
+  def get(localResource:String,remoteResource:String,offset:Long=0):Long = {
+    val f = new RandomAccessFile(localResource,"rw")
+    //Chunks.sendReqInfo(remoteResource,out,offset)//Send the file info to the server (it only cares about offset)
+    val acc = Chunks.getAcc(in)//Get ack of file info received
+    acc.msg match {
+      case ":Err404" => throw new IOException("File not Found")
+      case _ =>
+    }
+    val size = acc.msg.toLong
+    Chunks.sendAcc("SND",out)//Tell server to start sending
+    val newOffset = Chunks.getFile(in,f,offset,size)
+    if(newOffset == -1)
+      println("File received successfully")
+    else
+      println(s"File reception incomplete, new offset is $newOffset")
+    return newOffset
   }
-  def send(resource:String,offset:Long=0):Int = {
-    val f = new RandomAccessFile(resource,"rw")
-    f.seek(offset)
-    return 1
-    
-    
-    
-    //0: Fix get/set cmd so errors can easily be built in later
-    //1: sendFileInfo(file)
-    //2: getAcc("GotFileInfo")
-    //3: sendAcc("ReadyToSend")
-    //4: getAcc("ReadyToGet")
-    //5: chunkinator = new Chunkinator(myFile)
-    //6: while chunkinator.hasNextChunk:
-    //7: sendChunk(chunkinator.getNextChunk())
-    //8: getAcc("chunkRecieved") | getAcc("chunkError") || SocketError | timeout <-this is why commnads need to be fixed
-    //9: endwhile
-    //10: getAcc("allFileRecieved")
-    //11: return
+  
+  def send(localResource:String,offset:Long):Boolean = {
+    val fle = new File(localResource)
+    if(!fle.exists()){
+      Chunks.sendAcc(":Err404",out)
+      return false
+    }
+    val f = new RandomAccessFile(localResource,"rw")
+    //val inf = Chunks.getReqInfo(in)
+    val size = f.length()
+    Chunks.sendAcc(s"$size",out)
+    Chunks.getAcc(in)//Get snd acc
+    Thread.sleep(10)
+    val res =Chunks.sendFile(out,f,offset)
+    close()
+    return res
+  }
+  
+  def close(){
+    in.close()
+    out.close()
+    s.close()
   }
 }
+
+
+    
+
 
 

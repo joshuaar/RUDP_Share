@@ -7,8 +7,8 @@ import scala.concurrent.duration._
 import java.security.MessageDigest
 import Stream._
 import akka.actor.ActorSystem
-
-
+import scala.concurrent._
+import scala.concurrent.duration._
 
 abstract class Info
 case class ChunkInfo(nBytes:Long,offset:Long,digest:String) extends Info {
@@ -177,6 +177,10 @@ object Chunks {
 }
 
 
+class chunkFileGetter(s:Socket) {
+  
+}
+
 /**
  * Sends chunks in files across RUDP (or any socket). Does SHA hash checking to ensure accurate transfer.
  * Methods:
@@ -187,7 +191,12 @@ object Chunks {
 class chunkFileSender(s:Socket,chunkSize:Int=1024000) {
   val in = s.getInputStream()
   val out = s.getOutputStream()
-
+<<<<<<< HEAD
+  def waitFor(i:Info) = {
+    
+  }
+  def send(resource:String) = {
+=======
   def chunkinator(f:RandomAccessFile,offset:Long):Stream[Chunks.Chunk] = {
     //readChunk(f:RandomAccessFile,nBytes:Int, offset:Long = 0):Chunk
     Chunks.readChunk(f,chunkSize,offset) #:: chunkinator(f,offset+chunkSize)
@@ -198,6 +207,7 @@ class chunkFileSender(s:Socket,chunkSize:Int=1024000) {
     return 1
     
     
+>>>>>>> 4916c78eb52fe686d6995ef34878110e7621d36f
     
     //0: Fix get/set cmd so errors can easily be built in later
     //1: sendFileInfo(file)

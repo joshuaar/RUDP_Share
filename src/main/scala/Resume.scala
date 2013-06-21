@@ -2,17 +2,33 @@ package share.protocol
 import net.rudp._
 import java.io._
 import java.net._
+import scala.concurrent._
+import scala.concurrent.duration._
 import java.security.MessageDigest
+
+abstract class Info
+case class ChunkInfo(nBytes:Long,offset:Long,digest:String) extends Info {
+  val _1 = nBytes
+  val _2 = offset
+  val _3 = digest
+}
+case class AccInfo(msg:String) extends Info
+case class FileInfo(nBytes:Long,ChunkSize:Int,offset:Long,signature:String) extends Info {
+  val _1 = nBytes
+  val _2 = ChunkSize
+  val _3 = offset
+  val _4 = signature
+}
 
 object Chunks {
   val md = MessageDigest.getInstance("SHA")
 
   
   type Chunk = (Array[Byte],Long,String)//Data,offset,digest
-  type ChunkInfo = (Long,Long,String)//nBytes,offset,digest
+  //type ChunkInfo = (Long,Long,String)//nBytes,offset,digest
   val CHUNK_INF = ":ci(.*):(.*):(.*)".r//nBytes,offset,digest
   
-  type FileInfo = (Long,Int,Long,String)//nBytes,ChunkSize,offset,signature
+  //type FileInfo = (Long,Int,Long,String)//nBytes,ChunkSize,offset,signature
   val FILE_INF = ":fLi(.*):(.*):(.*):(.*)".r//nBytes,ChunkSize,offset,signature
   
   val ACC = ":AkC(.*)".r
@@ -27,6 +43,13 @@ object Chunks {
     val len = f.read(buf)
     val outData = buf.slice(0,len)
     return (outData,offset,new String(md.digest(outData)))
+  }
+  
+  def getChunkInfo(ch:Chunk):Info = {
+    val nBytes = ch._1.length
+    val offset = ch._2
+    val digest = ch._3
+    return ChunkInfo(nBytes,offset,digest)
   }
   
   def getCmd(cmdSig:Any,is:InputStream):Any = {
@@ -45,11 +68,11 @@ object Chunks {
     val out = new PrintWriter(os, true)
     out.println(":AkC"+msg)
   }
-  def getAcc(is:InputStream):String = {
+  def getAcc(is:InputStream):Info = {
     val in = new BufferedReader(new InputStreamReader(is))
     in.readLine() match {
       case ACC(msg) => {
-        return msg
+        return AccInfo(msg)
       }
       case _ => {
         throw new IOException("Unknown acc format")
@@ -64,11 +87,11 @@ object Chunks {
     out.println(s":fLi$nBytes:$chunkSize:$offset:$sig")
   }
   
-  def getFileInfo(is:InputStream):FileInfo = {
+  def getFileInfo(is:InputStream):Info = {
     val in = new BufferedReader(new InputStreamReader(is))
     in.readLine() match {
       case FILE_INF(nBytes,chunkSize,offset,signature) => {
-        return (nBytes.toLong,chunkSize.toInt,offset.toLong,signature)
+        return FileInfo(nBytes.toLong,chunkSize.toInt,offset.toLong,signature)
       }
       case _ =>{
         throw new IOException("Unrecognized File Info Format")
@@ -88,7 +111,7 @@ object Chunks {
     val in = new BufferedReader(new InputStreamReader(is))
     in.readLine() match {
       case CHUNK_INF(nBytes,offset,digest) => {
-        return (nBytes.toLong,offset.toLong,digest)
+        return ChunkInfo(nBytes.toLong,offset.toLong,digest)
       }
       case _ =>{
         throw new IOException("Unrecognized Chunk Info Format")
@@ -96,13 +119,6 @@ object Chunks {
     }
   }
 
-  def getChunkInfo(ch:Chunk):ChunkInfo = {
-    val nBytes = ch._1.length
-    val offset = ch._2
-    val digest = ch._3
-    return (nBytes,offset,digest)
-  }
-  
   def sendChunk(out:OutputStream,ch:Chunk,bufSize:Int=2048):Long = {
     val nBytes = ch._1.length
     if(nBytes <= bufSize){
@@ -144,6 +160,8 @@ object Chunks {
     f.seek(ch._2) //goto offset
     f.write(ch._1) //write the chunk
   }
+
+ 
 }
 
 /**
@@ -156,7 +174,11 @@ object Chunks {
 class chunkFileSender(s:Socket) {
   val in = s.getInputStream()
   val out = s.getOutputStream()
+  def waitFor(i:Info) = {
+    
+  }
   def send(resource:String) = {
+    
     //0: Fix get/set cmd so errors can easily be built in later
     //1: sendFileInfo(file)
     //2: getAcc("GotFileInfo")

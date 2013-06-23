@@ -1,0 +1,5 @@
+Server:
+vlc testvid.mp4 --start-time 300 --sout '#transcode{vcodec=h264,vb=0,scale=0,acodec=mpga,ab=128,channels=2,samplerate=44100}:standard{access=udp,mux=ts,dst=192.168.1.141:8080}'
+
+Client:
+vlc udp://@:8080

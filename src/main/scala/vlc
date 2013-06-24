@@ -1,5 +1,14 @@
 Server:
 vlc testvid.mp4 --start-time 300 --sout '#transcode{vcodec=h264,vb=0,scale=0,acodec=mpga,ab=128,channels=2,samplerate=44100}:standard{access=udp,mux=ts,dst=192.168.1.141:8080}'
 
+Server with DIV3 (works better when correcting missing packets):
+cvlc testvid.avi --start-time 710 --sout '#transcode{vcodec=DIV3,vb=800,scale=1,acodec=mpga,ab=128,channels=2,samplerate=44100}:standard{access=udp,mux=ts,dst=192.168.1.141:8080}'
+
+Server RTP:
+cvlc testvid.avi --start-time 121 --sout '#transcode{vcodec=h264,vb=800,scale=1,acodec=mpga,ab=128,channels=2,samplerate=44100}:rtp{mux=ts,dst=192.168.1.141,port=5004}'
+
+Client RTP:
+vlc rtp://@:5004
+
 Client:
 vlc udp://@:8080

@@ -8,5 +8,9 @@
 	<classpathentry kind="lib" path="/home/josh/projects/UDPChat/lib/rudp-1.2.3.jar"/>
 	<classpathentry kind="lib" path="/home/josh/UDPChat/lib/rudp-1.2.3.jar"/>
 	<classpathentry kind="lib" path="lib/rudp-1.2.3.jar"/>
+	<classpathentry kind="lib" path="/home/josh/projects/RUDP_Share/lib/caprica-vlcj-540a7a2/jars/jna-3.5.2.jar"/>
+	<classpathentry kind="lib" path="/home/josh/projects/RUDP_Share/lib/caprica-vlcj-540a7a2/jars/platform-3.5.2.jar"/>
+	<classpathentry kind="lib" path="/home/josh/projects/RUDP_Share/lib/caprica-vlcj-540a7a2/jars/vlcj-2.3.1.jar"/>
+	<classpathentry kind="lib" path="/home/josh/projects/RUDP_Share/lib/caprica-vlcj-540a7a2/jars/vlcj-2.3.1-sources.jar"/>
 	<classpathentry kind="output" path="bin"/>
 </classpath>

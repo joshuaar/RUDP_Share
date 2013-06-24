@@ -9,7 +9,7 @@ abstract class msg
 case class MESSAGE(msg:String) extends msg
 case class RECVDMESSAGE(msg:String) extends msg
 case class SENDMESSAGE(msg:String) extends msg
-case class LISTEN(timeout:Int=0) extends msg
+case class LISTEN(host:String,port:Int,timeout:Int=0) extends msg
 case class PUNCH(ip:InetAddress, port:Int)
 case class PACKET(data:DatagramPacket)
 case class CONNECT(remoteHost:String, remotePort:Int)

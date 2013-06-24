@@ -106,14 +106,22 @@ class rudpActor(lp:Int) extends Actor{
   import context._
   def receive = {
     
-    case LISTEN => {
+    case l:LISTEN => {
+        
       println(s"Listening on $localPort")
+      val rhost = l.host
+      val rport = l.port
+      puncher.punch(rhost,localPort,rport) //def punch(host:String,localPort:Int,remotePort:Int,retransmits:Int=100)
+      Thread.sleep(50)
       val serverSocket = new ReliableServerSocket(localPort)
-      self ! serverSocket.accept()
+      val future = Future{ serverSocket.accept() }
+      try{ self ! Await.result(future, l.timeout second).asInstanceOf[ReliableSocket] }
+      catch{case s:SocketException => println(s"[RUDP]timed out listening for $rhost:$rport")}
       }
     
     case CONNECT(ip,port) => {
       println(s"Attempting RUDP Connection to $ip on port $port")
+      Thread.sleep(100)
       val cli = new ReliableSocket(ip,port,localHost,localPort)
       self ! cli
     }
@@ -252,9 +260,9 @@ class rudpListener(s:ReliableSocket,parent:ActorRef) extends Actor{
 
 object api {
   val system = ActorSystem("RUDPSystem")
-  def makeServer(name:String,port:Int):ActorRef = {
+  def makeServer(name:String,port:Int,host:String,remotePort:Int):ActorRef = {
 	  val serv = system.actorOf(Props(new rudpActor(port)), name = name)
-	  serv ! LISTEN
+	  serv ! LISTEN(host,remotePort,10)//LISTEN(host:String,port:Int,timeout:Int=0)
 	  return serv
   }
   def makeClient(name:String,port:Int,host:String,remotePort:Int):ActorRef = {
@@ -267,7 +275,7 @@ object api {
 object rudp extends App {
   
   //val system = ActorSystem("ChatSystem")
-  val serv = api.makeServer("serv",6004)
+  val serv = api.makeServer("serv",6004,"localhost",6005)
   val cli = api.makeClient("cli",6005,"localhost",6004)
  // serv ! LISTEN
   Thread.sleep(500)
@@ -281,8 +289,8 @@ object rudp extends App {
   serv ! SENDMESSAGE("Message2")
   
   //Test file request
-  //cli ! GET("/home/josh/test","/home/josh/testCopy")
+  cli ! GET("/home/josh/test","/home/josh/testCopy")
   //cli ! GET("/home/josh/test2","/home/josh/testCopy")
-  serv ! GET("/home/josh/CIM/Research/labdata/jaricher/newDecipher/Data for Database/Array Results/First Chip Disease Dataset/llnl.csv","/home/josh/test3")
+  //serv ! GET("/home/josh/CIM/Research/labdata/jaricher/newDecipher/Data for Database/Array Results/First Chip Disease Dataset/llnl.csv","/home/josh/test3")
   
 }

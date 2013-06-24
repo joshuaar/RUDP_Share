@@ -1,6 +1,9 @@
 import org.scalatest.FunSuite
 import share.protocol._
+import share.vid._
 import java.io._
+
+
 class ResumeSpec extends FunSuite {
   test("Test read chunk") {
     expect(true) {

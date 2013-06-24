@@ -1,6 +1,7 @@
 package share.vid
 import uk.co.caprica.vlcj.player._
 import java.lang.ProcessBuilder
+import java.io.IOException
 
 object osDetect {
   val OS = System.getProperty("os.name").toLowerCase
@@ -17,28 +18,40 @@ object osDetect {
   }
   
   def isUnix():Boolean ={
-    return OS.indexOf("nix") >= 0
+    return OS.indexOf("nux") >= 0
   }
  
 }
 
 class RTPStream {
-  val mp = new MediaPlayerFactory()//not used right now
+  //val mp = new MediaPlayerFactory()//not used right now
   def serve(resource:String,remoteAddr:String,remotePort:Int,startTime:Long=0,kBRate:Int=700):Process = {
-    
-    val streamProp = s"'#transcode{vcodec=h264,vb=$kBRate,scale=1,acodec=mpga,ab=128,channels=2,samplerate=44100}:rtp{mux=ts,dst=$remoteAddr,port=$remotePort}'"
-    
+    val cmd = "cvlc /home/josh/testvid.avi --start-time 121 --sout '#transcode{vcodec=h264,vb=800,scale=1,acodec=mpga,ab=128,channels=2,samplerate=44100}:rtp{mux=ts,dst=192.168.1.141,port=5004}'"
+
     if(osDetect.isUnix()) {
-      val proc = new ProcessBuilder("cvlc",resource,"--start-time",startTime.toString,
-          "--sout",streamProp)
-      val start = proc.start()
-      start
+      val proc = Runtime.getRuntime().exec("vlc rtp://@:5004")
+      proc
     }
     
     else{
-      println("Only POSTIX compliant OS is supported")
-      exit(1)
+      throw new IOException("OS Not supported")
     }
     
   }
+}
+
+object streamTest extends App {
+  val stream = new RTPStream()
+    val inst = stream.serve("/home/josh/testvid.avi","127.0.0.1",5005)//serve(resource:String,remoteAddr:String,remotePort:Int,startTime:Long=0,kBRate:Int=700)
+    val is = inst.getErrorStream()
+    val buf = new Array[Byte](2048)
+    var count = 0
+    while(count <=100) {
+      println("reading")
+      val len = is.read(buf)
+      if(len>0)
+        println(new String(buf))
+      Thread.sleep(50)
+      count+=1
+    }
 }

@@ -13,6 +13,46 @@ import java.net.URL
 
 abstract class msg
 case class LISTEN(dev:String)
+case class SEND(s:String,dev:String)
+
+class conHandler() extends Actor {
+  //handles connections
+  def receive = {
+    case _ => //do nothing
+  }
+}
+
+class httpActor(uid:String, trackerHost:String) extends Actor {
+  import context._
+  val config = Config(connectTimeout = 10000, readTimeout = 60000)
+  def http = new HttpClient(config)
+  
+  val listener = context.actorOf(Props(new httpListener("uid","trackerHost")))
+  
+  def getPeers():String = {
+    val url = s"$trackerHost/u/$uid"
+    val res = http.get(new URL(url))
+    return res.body.asString
+  }
+  
+  def sendMsg(dev:String,msg:String):String = {
+    val url = s"$trackerHost/p/$uid"
+    val req = RequestBody(Map("msg"->msg))
+    val res = http.post(url,Some(req))
+    return res.body.asString
+  }
+  
+  def receive = {
+    case SEND(msg,dev) => {
+      //val future = Future{ sendMsg(dev,msg) }
+      sendMsg(dev,msg)
+      
+    }
+    case s: String => {
+      println("msg: "+s)
+    }
+  }
+}
 
 /**
  * Registers this device on tracker, then listens for messages
@@ -23,6 +63,7 @@ class httpListener(uid:String,trackerHost:String) extends Actor {
   def http = new HttpClient(config)
   val devID = register()
   self ! LISTEN(devID)
+  
   def register():String = {
     val url = s"$trackerHost/u/$uid"
     val req = RequestBody(Map("IP"->getLocalIP()))
@@ -44,11 +85,7 @@ class httpListener(uid:String,trackerHost:String) extends Actor {
       case s:SocketException => {return "unknown"}
     }
   }
-  def getPeers():String = {
-    val url = s"$trackerHost/u/$uid"
-    val res = http.get(new URL(url))
-    return res.body.asString
-  }
+
   def listen(devID:String):String = {
     val url = s"$trackerHost/p/$devID"
     val res = http.get(new URL(url))
@@ -63,7 +100,7 @@ class httpListener(uid:String,trackerHost:String) extends Actor {
           self ! LISTEN(dev)
         }
         case s:String => {
-          println(s)
+          context.parent ! s
         }
       }
     }

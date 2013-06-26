@@ -1,5 +1,4 @@
 package share.vid
-import uk.co.caprica.vlcj.player._
 import java.lang.ProcessBuilder
 import java.io.IOException
 
@@ -40,7 +39,7 @@ class RTPStream {
   }
 }
 
-object streamTest extends App {
+object streamTest {//extends App {
   val stream = new RTPStream()
     val inst = stream.serve("/home/josh/testvid.avi","127.0.0.1",5005)//serve(resource:String,remoteAddr:String,remotePort:Int,startTime:Long=0,kBRate:Int=700)
     val is = inst.getErrorStream()

@@ -62,6 +62,9 @@ class httpListener(uid:String,trackerHost:String) extends Actor {
         case http200 => {
           self ! LISTEN(dev)
         }
+        case s:String => {
+          println(s)
+        }
       }
     }
   }

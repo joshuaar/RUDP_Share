@@ -144,36 +144,8 @@ object Chunks {
     f.seek(offset)
     val fout = new FileOutputStream(f.getFD())
     wireCodes.copy(is,fout)
-//    val fp = f.getFilePointer()
-//    println(s"offset set at: $fp, arg received: offset")
-//    var gotten:Long = 0
-//    var len:Int = 0
-//    val buf = new Array[Byte](bufSize)
-//    try{
-//    len = is.read(buf)
-//    val nBytesToGet = fileSize - offset
-//    println(s"File size: $fileSize, offset: $offset")
-//    val bytePercent:Long = nBytesToGet/100
-//    var nextPercent:Long = bytePercent // add 1% of the bytes to the offset
-//    while(offset+gotten != fileSize && len != -1) {
-//      f.write(buf,0,len)
-//      gotten+=len
-//      //if(gotten > nextPercent){
-//        //print("=")
-//        //nextPercent+=bytePercent
-//        var bytesLeft = fileSize - offset - gotten
-//        //println(s"bytes left = $bytesLeft")
-//      //}
-//      len=is.read(buf)
-//    }
-//    }
-//    catch{
-//      case s:SocketException => return offset+gotten//incomplete
-//    }
-//    f.close()
-//    return -1//Success
   }
-  //GetFile
+
   
   def sendChunkInfo(os:OutputStream,ch:Chunk) = {
     val out = new PrintWriter(os, true)

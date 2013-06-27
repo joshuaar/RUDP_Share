@@ -5,16 +5,57 @@ import scala.concurrent._
 import akka.pattern.ask
 import akka.util.Timeout
 import scala.concurrent.duration._
+import akka.actor.AllForOneStrategy
+import akka.actor.SupervisorStrategy._
 
 import uk.co.bigbeeconsultants.http._
 import uk.co.bigbeeconsultants.http.response.Response
 import uk.co.bigbeeconsultants.http.request.RequestBody
 import java.net.URL
 import scala.util.parsing.json._
+import scala.concurrent.stm._
 
+object Shared {
+  val thisDev:Ref[Option[Dev]] = Ref(None)
+  def getDev():Dev = {
+    atomic { implicit txn =>
+      thisDev() match {
+        case Some(d) => return d
+        case None => throw new DevException("Device not registered")
+      }
+    }
+  }
+  def setDev(d:Dev) = {
+    atomic { implicit txn =>
+      thisDev() = Option(d)
+    }
+  }
+  def getDevID():String ={
+    atomic {implicit txn =>
+      return getDev.devID
+    }
+  }
+}
+
+object Dev {
+  def fromMap(m:Map[String,String]):Dev = {
+    new Dev(m getOrElse ("ipLocal","nil"), 
+          m getOrElse("ipExternal","nil"), 
+          m getOrElse("devID","nil"))
+  }
+  def fromJSON(j:String):Dev = {
+    val js = JSON.parseFull(j) match {
+      case Some(stuff)=>stuff.asInstanceOf[Map[String,String]]
+      case None => throw new JSONException("JSON parse error while creating device")
+    }
+    return Dev.fromMap(js)
+  }
+}
 case class Dev(ipLocal:String,ipExternal:String,devID:String)
 case class JSONException(msg:String) extends Exception
 case class ConnException(msg:String) extends Exception
+case class DevException(msg:String) extends Exception
+case class ForbiddenException(msg:String) extends Exception
 abstract class msg
 case class LISTEN(dev:String) extends msg
 case class SEND(s:String,dev:String) extends msg
@@ -27,6 +68,17 @@ case class ACK_CON(devID:Dev,port:Int)
 
 class httpActor(uid:String, trackerHost:String) extends Actor {
   import context._
+  //Supervisor Strategy
+  override val supervisorStrategy = 
+     AllForOneStrategy(maxNrOfRetries = 5, withinTimeRange = 2 minute) {
+    case _:ForbiddenException => {
+      Thread.sleep(10000)
+      Restart
+      }
+    case _:Exception => Escalate
+}
+  
+  
   var devID = ""
     
   val config = Config(connectTimeout = 10000, readTimeout = 60000)
@@ -58,9 +110,7 @@ class httpActor(uid:String, trackerHost:String) extends Actor {
     case Some(json) => {
       //Holy shit this is harder than it needs to be
       val connectableDevs = json.asInstanceOf[List[Map[String,String]]].map(
-          i => Dev(i getOrElse ("ipLocal","nil"), 
-          i getOrElse("ipExternal","nil"), 
-          i getOrElse("devID","nil")))
+          i => Dev.fromMap(i))
       connectableDevs
     }
     case None => {
@@ -102,9 +152,9 @@ class httpActor(uid:String, trackerHost:String) extends Actor {
     }
     
     //We just got our device ID, now we are registered with the server and can start looking for peers
-    case DEVID(id) => {
+    case d:Dev => {
       println("*** (httpActor) Got my device ID! ***")
-      devID = id
+      devID = d.devID
       context.parent ! getPeers()
     }
     
@@ -137,8 +187,12 @@ class httpListener(uid:String,trackerHost:String) extends Actor {
   var devID = ""
     
   def refresh() ={
-	  devID = register()
-	  context.parent ! DEVID(devID)
+	  val jsonDev = register()
+	  println(jsonDev)
+	  val thisDev = Dev.fromJSON(jsonDev)
+	  Shared.setDev(thisDev)
+	  devID = thisDev.devID
+	  context.parent ! thisDev
   }
   
   refresh()
@@ -179,6 +233,10 @@ class httpListener(uid:String,trackerHost:String) extends Actor {
       println(s"listening as: $dev")
       listen(dev) match {
         case "OK" => {
+        }
+        case "Forbidden" => {
+          println("***(HTTPListener) 403 Forbidden, someone else has this device ID? ***")
+          throw new ForbiddenException("403: Forbidden")
         }
         case s:String => {
           context.parent ! s

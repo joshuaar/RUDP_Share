@@ -12,6 +12,8 @@ resolvers += "Typesafe Repository" at "http://repo.typesafe.com/typesafe/release
 
 libraryDependencies += "org.scalatest" % "scalatest_2.10" % "1.9.1" % "test"
 
+libraryDependencies += ("org.scala-stm" %% "scala-stm" % "0.7")
+
 libraryDependencies ++= Seq(
   "com.typesafe.akka" %% "akka-actor"   % "2.2-M3",
   "com.typesafe.akka" %% "akka-slf4j"   % "2.2-M3",

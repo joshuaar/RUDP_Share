@@ -16,5 +16,6 @@
 	<classpathentry kind="lib" path="/home/josh/projects/RUDP_Share/lib/bee-client_2.10-0.21.2.jar"/>
 	<classpathentry kind="lib" path="/home/josh/RUDP_Share/lib/bee-client_2.10-0.21.2.jar"/>
 	<classpathentry kind="lib" path="/home/josh/RUDP_Share/lib/json-smart-1.1.1.jar"/>
+	<classpathentry kind="lib" path="/home/josh/UDPChat/target/scala-2.10/UDPChat-assembly-0.1.jar"/>
 	<classpathentry kind="output" path="bin"/>
 </classpath>

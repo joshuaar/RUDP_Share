@@ -14,5 +14,7 @@
 	<classpathentry kind="lib" path="/home/josh/projects/RUDP_Share/lib/caprica-vlcj-540a7a2/jars/vlcj-2.3.1-sources.jar"/>
 	<classpathentry kind="lib" path="/home/josh/projects/RUDP_Share/lib/resty-0.3.2.jar"/>
 	<classpathentry kind="lib" path="/home/josh/projects/RUDP_Share/lib/bee-client_2.10-0.21.2.jar"/>
+	<classpathentry kind="lib" path="/home/josh/RUDP_Share/lib/bee-client_2.10-0.21.2.jar"/>
+	<classpathentry kind="lib" path="/home/josh/RUDP_Share/lib/json-smart-1.1.1.jar"/>
 	<classpathentry kind="output" path="bin"/>
 </classpath>

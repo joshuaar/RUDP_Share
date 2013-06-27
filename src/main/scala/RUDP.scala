@@ -115,8 +115,18 @@ class rudpActor(lp:Int) extends Actor{
       Thread.sleep(50)
       val serverSocket = new ReliableServerSocket(localPort)
       val future = Future{ serverSocket.accept() }
-      try{ self ! Await.result(future, l.timeout second).asInstanceOf[ReliableSocket] }
-      catch{case s:SocketException => println(s"[RUDP]timed out listening for $rhost:$rport")}
+      try{
+        
+        self ! Await.result(future, l.timeout second).asInstanceOf[ReliableSocket] 
+        sender ! CONNECTED
+        
+      }
+      catch{case s:SocketException => {
+        
+        println(s"[RUDP]timed out listening for $rhost:$rport")
+        
+        }
+      }
       }
     
     case CONNECT(ip,port) => {
@@ -124,6 +134,7 @@ class rudpActor(lp:Int) extends Actor{
       Thread.sleep(100)
       val cli = new ReliableSocket(ip,port,localHost,localPort)
       self ! cli
+      sender ! CONNECTED
     }
     
     case s:ReliableSocket => {

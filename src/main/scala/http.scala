@@ -65,6 +65,36 @@ case class REQ_CON(d:Dev,port:Int)
 case class CON_OUT(devID:String,port:Int)
 case class CON_IN(devID:String,port:Int)
 case class ACK_CON(devID:Dev,port:Int)
+//former wire codes
+case class ASK_CON(devID:String,port:String) 
+object ASK_CON {
+    def fromMap(m:Map[String,String]):ASK_CON = {
+    new ASK_CON(m getOrElse ("devID","nil"), 
+          m getOrElse("port","nil"))
+  }
+  def fromJSON(j:String):ASK_CON = {
+    val js = JSON.parseFull(j) match {
+      case Some(stuff)=>stuff.asInstanceOf[Map[String,String]]
+      case None => throw new JSONException("JSON parse error while parsing ask request")
+    }
+    fromMap(js)
+  }
+}
+
+case class ACK(devID:String,port:Int)
+object ACK {
+    def fromMap(m:Map[String,String]):ASK_CON = {
+    new ASK_CON(m getOrElse ("devID","nil"), 
+          m getOrElse("port","nil"))
+  }
+  def fromJSON(j:String):ASK_CON = {
+    val js = JSON.parseFull(j) match {
+      case Some(stuff)=>stuff.asInstanceOf[Map[String,String]]
+      case None => throw new JSONException("JSON parse error while parsing ack request")
+    }
+    fromMap(js)
+  }
+}
 
 class httpActor(uid:String, trackerHost:String) extends Actor {
   import context._
@@ -88,21 +118,21 @@ class httpActor(uid:String, trackerHost:String) extends Actor {
   //context.parent ! getPeers // send initial peers list to main actor
   
   //wire codes
-  val ASK_CON = ":AsK:(.*):(.*)".r//devID:port
-  val ACK = ":AcK:(.*):(.*)".r//acknowledgement with message
+
   
   /**
    * This gets picked up by the ASK_CON handler
    */
   def reqConnect(d:Dev,port:Int) = {
-    val res = sendMsg(d.devID,s":AsK:$devID:$port")
+    val res = sendMap(d.devID,Map[String,String](("type","ask"),("devID",devID),("port",port.toString)))
+
   }
   
   def sendAck(d:Dev,port:Int) = {
     if(devID==""){
       throw new Exception("We don't have a local device id!")
     }
-    val res = sendMsg(d.devID,s":AcK:$devID:$port")
+     val res = sendMap(d.devID,Map[String,String](("type","ack"),("devID",devID),("port",port.toString)))
   }
     
   def getPeers():Map[String,Dev] = {
@@ -127,12 +157,16 @@ class httpActor(uid:String, trackerHost:String) extends Actor {
   }
   
   def sendMsg(dev:String,msg:String):String = {
-    val url = s"$trackerHost/p/$dev"
-    val req = RequestBody(Map("msg"->msg))
-    val res = http.post(url,Some(req))
-    return res.body.asString
+    return sendMap(dev,Map("type"->"msg","msg"->msg))
   }
   
+  def sendMap(dev:String,map:Map[String,String]):String = {
+    def http = new HttpClient(config)
+    val url = s"$trackerHost/p/$uid"
+    val req = RequestBody(map)
+    val res = http.post(url, Some(req))
+    return res.body.asString
+  }
   
   def receive = {
     case SEND(msg,dev) => {
@@ -252,7 +286,23 @@ class httpListener(uid:String,trackerHost:String) extends Actor {
           throw new ForbiddenException("403: Forbidden")
         }
         case s:String => {
-          context.parent ! s
+          JSON.parseFull(s) match {
+            case Some(json) => {
+              json.asInstanceOf[Map[String,String]] get "type" match {
+                case Some(thing) => {
+                  if(thing.equals("ask")) 
+                    context.parent ! ASK_CON.fromJSON(s)
+                  else if(thing.equals("ack"))
+                    context.parent ! ACK.fromJSON(s)
+                }
+                case None =>
+                  throw new JSONException("Expected type attribute, got none")
+              }
+            }
+            case None => {
+              context.parent ! s
+            }
+          }
         }
       }
       self ! LISTEN(dev)

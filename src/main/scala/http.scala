@@ -91,6 +91,9 @@ class httpActor(uid:String, trackerHost:String) extends Actor {
   val ASK_CON = ":AsK:(.*):(.*)".r//devID:port
   val ACK = ":AcK:(.*):(.*)".r//acknowledgement with message
   
+  /**
+   * This gets picked up by the ASK_CON handler
+   */
   def reqConnect(d:Dev,port:Int) = {
     val res = sendMsg(d.devID,s":AsK:$devID:$port")
   }
@@ -138,6 +141,10 @@ class httpActor(uid:String, trackerHost:String) extends Actor {
       
     }
     
+    /**
+     * This comes from the main actor.
+     * It is trying to ask a remote host to connect.
+     */
     case REQ_CON(d:Dev,port:Int) => {
       if(devID!=""){
     	  reqConnect(d,port)
@@ -158,14 +165,20 @@ class httpActor(uid:String, trackerHost:String) extends Actor {
       context.parent ! getPeers()
     }
     
+    //This means the remote actor indicated by devID is listening for connections on port port 
     case ACK(devID,port) => {
       parent ! CON_OUT(devID,port.toInt) //Send device ID to main actor. This means that actor should try to connect to the remote host
     }
     
+    //Sending an acknowledgement. This means the main actor is listening for connections from device d on port port
     case ACK_CON(d,port) => {
       sendAck(d,port)
     }
     
+    /**
+     * This message comes when a remote host is asking to connect
+     * It is the first encounter with a remote host over the relay
+     */
     case ASK_CON(devID,port) => {
       parent ! CON_IN(devID,port.toInt)
     }

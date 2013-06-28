@@ -15,6 +15,7 @@ object wireCodes {
   val FT_REQ = "::(.*):(.*):(.*):(.*)".r//resource:IP:Port:offset
   val FT_RDY = ":RDY" //Send this to host when ready for file
   val FT_STOP = ":STP"
+  val ECHO_ = ":ECHO:(.*)".r
     
   def sendreq(req:GET,ip:String,port:Int):String ={
     val resource = req.r
@@ -159,6 +160,11 @@ class rudpActor(lp:Int) extends Actor{
       send.println(m)
       println("outer sent")
     }
+    
+    case ECHO(m) => {
+      send.println(s":ECHO:$m")
+    }
+    
     case req:GET => {
       //GET(r:String,destination:String,offset:Long=0)
       val resource = req.r
@@ -258,6 +264,9 @@ class rudpListener(s:ReliableSocket,parent:ActorRef) extends Actor{
           println("Now I got the connection information from remote")
           parent ! (ip,port)
         }
+        case wireCodes.ECHO_(m) => {
+          parent ! SENDMESSAGE(m)
+        }
         case s:String => {
           parent ! RECVDMESSAGE(s)
           println("Sent unknown message to handler")
@@ -283,7 +292,7 @@ object api {
   }
 }
 
-object rudp{// extends App {
+object rudp extends App {
   
   //val system = ActorSystem("ChatSystem")
   val serv = api.makeServer("serv",6004,"localhost",6005)
@@ -296,11 +305,11 @@ object rudp{// extends App {
   Thread.sleep(1000)
   
   //Test send message
-  cli ! SENDMESSAGE("Message1")
-  serv ! SENDMESSAGE("Message2")
+  cli ! ECHO("ECHOME")
+  //serv ! SENDMESSAGE("Message2")
   
   //Test file request
-  cli ! GET("/home/josh/test","/home/josh/testCopy")
+  //cli ! GET("/home/josh/test","/home/josh/testCopy")
   //cli ! GET("/home/josh/test2","/home/josh/testCopy")
   //serv ! GET("/home/josh/CIM/Research/labdata/jaricher/newDecipher/Data for Database/Array Results/First Chip Disease Dataset/llnl.csv","/home/josh/test3")
   

@@ -11,6 +11,7 @@ import share.protocol.http.GETPEERS
 import share.protocol.http.CON_OUT
 import share.protocol.http.CON_IN
 import share.protocol.http.ACK_CON
+import share.protocol.http.Shared
 import akka.actor._
 import java.net._
 import scala.concurrent._
@@ -57,8 +58,22 @@ class MainActor extends Actor {
   val http = context.actorOf(Props(new httpActor(const.uname,const.trackerHost)))
   var knownDevs = Map[String,Dev]()
   
+  def decideIP(remoteDev:Dev):String = {
+    val myDev = Shared.getDev()
+    val host = remoteDev.ipExternal
+    if(myDev.ipExternal == host){//Local and remote share the same external ip, so we must connect via local net
+      return remoteDev.ipLocal
+      }
+    return host
+  }
   
   def receive = {
+    /**
+     * Received a list of remote devices from http
+     * This happens when first connecting, or when the connection is refreshed.
+     * This handler figures out which devices need to be connected, 
+     * adds those to pending connections, and sends those requests off to http
+     */
     case devs:const.devMap => {
       knownDevs = devs
       println(s"*** (MainActor) Got peer list $devs ***")
@@ -77,12 +92,19 @@ class MainActor extends Actor {
     }//Now every device on the list has been checked against existing connections
     //And a connection request has been sent if there is no connection
     
+    /**
+     * Comes from http when an acknowledgement has been received from a remote host.
+     * When this message is recieved, the remote host should have already punched a hole
+     * and is waiting for an inbound connection.
+     */
     case CON_OUT(devID,port:Int) => {
       pendingCon.pop(devID) match {
         case Some(actor) => {
           knownDevs get devID match {
             case Some(dev) => {
-              val host = dev.ipExternal
+              //Decide which IP to use (internal or external)
+              val host = decideIP(dev)
+              
               implicit val timeout = Timeout(15 seconds)
               val future = actor ? CONNECT(host,port)
               println("Client actor attempting connection to host")
@@ -103,9 +125,13 @@ class MainActor extends Actor {
         case None => println("Tried to pop a pending connection that does not exist")
       }
     }
-    
-    //Recieved an connection request on the wire, meaning we should start a local server
-    //to listen for connections from the remote
+    /**
+     * Recieved an connection request on the wire, meaning we should start a local server
+     * to listen for connections from the remote. We also need to figure out which IP
+     * the remote should attempt a connection on (external or internal)
+     * devID: the remote's device ID
+     * port: the remote's port
+     */
     case CON_IN(devID,port:Int) => {
       if(!con.isConnected(devID)){
 
@@ -113,7 +139,9 @@ class MainActor extends Actor {
           case Some(dev) =>{
             val lport = wireCodes.getLocalPort()
             val serv = context.actorOf(Props(new rudpActor(lport)),name="serv:"+devID)
-            val host = dev.ipExternal
+            //Decide which IP to connect on
+            val host = decideIP(dev)
+            
             implicit val timeout = Timeout(15 seconds)
             val future = serv ? LISTEN(host,port,15)
             http ! ACK_CON(dev,lport) // send my local port to the remote device

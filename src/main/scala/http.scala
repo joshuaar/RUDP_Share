@@ -165,8 +165,9 @@ class httpActor(uid:String, trackerHost:String) extends Actor {
   }
   
   def sendMap(dev:String,map:Map[String,String]):String = {
+    println("Sending Map "+map.toString)
     def http = new HttpClient(config)
-    val url = s"$trackerHost/p/$uid"
+    val url = s"$trackerHost/p/$dev"
     val req = RequestBody(map)
     val res = http.post(url, Some(req))
     return res.body.asString
@@ -185,6 +186,7 @@ class httpActor(uid:String, trackerHost:String) extends Actor {
      */
     case REQ_CON(d:Dev,port:Int) => {
       if(devID!=""){
+        println(s"***(httpActor) Sending a request for connection on $d:$port***")
     	  reqConnect(d,port)
       }
       else{

@@ -292,7 +292,7 @@ object api {
   }
 }
 
-object rudp extends App {
+object rudp {//extends App {
   
   //val system = ActorSystem("ChatSystem")
   val serv = api.makeServer("serv",6004,"localhost",6005)

@@ -56,6 +56,7 @@ case class JSONException(msg:String) extends Exception
 case class ConnException(msg:String) extends Exception
 case class DevException(msg:String) extends Exception
 case class ForbiddenException(msg:String) extends Exception
+case class DevNotFoundException(msg:String) extends Exception
 abstract class msg
 case class LISTEN(dev:String) extends msg
 case class SEND(s:String,dev:String) extends msg
@@ -105,6 +106,9 @@ class httpActor(uid:String, trackerHost:String) extends Actor {
       Thread.sleep(10000)
       Restart
       }
+    case _:DevNotFoundException => {
+      Restart
+    }
     case _:Exception => Escalate
 }
   
@@ -285,6 +289,11 @@ class httpListener(uid:String,trackerHost:String) extends Actor {
           println("***(HTTPListener) 403 Forbidden, someone else has this device ID? ***")
           throw new ForbiddenException("403: Forbidden")
         }
+        case "Not Found" => {
+           println("***(HTTPListener) 404 Not Found, refreshing device ***")
+           throw new DevNotFoundException("Unexpectedly could not find device entry, restarting")
+        }
+        
         case s:String => {
           JSON.parseFull(s) match {
             case Some(json) => {

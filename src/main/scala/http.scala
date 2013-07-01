@@ -7,6 +7,7 @@ import akka.util.Timeout
 import scala.concurrent.duration._
 import akka.actor.AllForOneStrategy
 import akka.actor.SupervisorStrategy._
+import java.net.ConnectException
 
 import uk.co.bigbeeconsultants.http._
 import uk.co.bigbeeconsultants.http.response.Response
@@ -66,6 +67,7 @@ case class REQ_CON(d:Dev,port:Int)
 case class CON_OUT(devID:String,port:Int)
 case class CON_IN(devID:String,port:Int)
 case class ACK_CON(devID:Dev,port:Int)
+
 //former wire codes
 case class ASK_CON(devID:String,port:String) 
 object ASK_CON {
@@ -97,8 +99,25 @@ object ACK {
   }
 }
 
+object httpFuncs {
+  val config = Config(connectTimeout = 10000, readTimeout = 60000)
+  
+  def getDevInfo(devID:String,trackerHost:String):Option[Dev] = {
+    def http = new HttpClient(config)
+    val url = s"$trackerHost/p/$devID"
+    val res = http.get(new URL(url))
+    try{
+    	return Some(Dev.fromJSON(res.body.asString))
+    }
+    catch {
+      case e:JSONException => return Option.empty
+    }
+  }
+}
+
 class httpActor(uid:String, trackerHost:String) extends Actor {
   import context._
+  
   //Supervisor Strategy
   override val supervisorStrategy = 
      AllForOneStrategy(maxNrOfRetries = 5, withinTimeRange = 2 minute) {
@@ -109,14 +128,18 @@ class httpActor(uid:String, trackerHost:String) extends Actor {
     case _:DevNotFoundException => {
       Restart
     }
+//    case _:ConnectException => {//The server is probably down. Keep trying (forever?)
+//      Thread.sleep(10000)
+//      Restart
+//    }
     case _:Exception => Escalate
-}
+    }
   
+  println("***(httpActor) Initializing HTTP communications***")
   
   var devID = ""
     
-  val config = Config(connectTimeout = 10000, readTimeout = 60000)
-  def http = new HttpClient(config)
+  def http = new HttpClient(httpFuncs.config)
   val listener = context.actorOf(Props(new httpListener(uid,trackerHost)))
   
   //context.parent ! getPeers // send initial peers list to main actor
@@ -166,7 +189,7 @@ class httpActor(uid:String, trackerHost:String) extends Actor {
   
   def sendMap(dev:String,map:Map[String,String]):String = {
     println("Sending Map "+map.toString)
-    def http = new HttpClient(config)
+    def http = new HttpClient(httpFuncs.config)
     val url = s"$trackerHost/p/$dev"
     val req = RequestBody(map)
     val res = http.post(url, Some(req))
@@ -240,12 +263,17 @@ class httpListener(uid:String,trackerHost:String) extends Actor {
   var devID = ""
     
   def refresh() ={
+    try{
 	  val jsonDev = register()
 	  println(jsonDev)
 	  val thisDev = Dev.fromJSON(jsonDev)
 	  Shared.setDev(thisDev)
 	  devID = thisDev.devID
 	  context.parent ! thisDev
+    }
+    catch{
+      case e:ConnectException => throw new ConnectException(e.getMessage())
+    }
   }
   
   refresh()
@@ -307,6 +335,7 @@ class httpListener(uid:String,trackerHost:String) extends Actor {
                     context.parent ! ACK.fromJSON(s)
                 }
                 case None =>
+                  println("***(HttpListener) No type variable found, unknown command type")
                   throw new JSONException("Expected type attribute, got none")
               }
             }

@@ -12,6 +12,7 @@ import share.protocol.http.CON_OUT
 import share.protocol.http.CON_IN
 import share.protocol.http.ACK_CON
 import share.protocol.http.Shared
+import share.protocol.http.httpFuncs
 import akka.actor._
 import java.net._
 import scala.concurrent._
@@ -19,11 +20,18 @@ import akka.pattern.ask
 import akka.util.Timeout
 import scala.concurrent.duration._
 
+import akka.actor.AllForOneStrategy
+import akka.actor.SupervisorStrategy._
+
 object const {
   val uname = "default"
   val trackerHost = "http://smaugshideout.com:3000"
     
   type devMap = Map[String,Dev]
+  
+  def devInfoURL(devID:String):String ={
+    s"$trackerHost/$uname/$devID"
+  }
 }
 
 class Connections {
@@ -52,10 +60,21 @@ class Connections {
 
 class MainActor extends Actor {
   import context._
+  
+  override val supervisorStrategy = 
+     AllForOneStrategy(maxNrOfRetries = 10, withinTimeRange = 1 minute) {
+     case _:ConnectException => {//The server is probably down. Keep trying (forever?)
+       println("Connection Refused, retrying")
+       Thread.sleep(10000)
+     }
+     Restart
+    case _:Exception => Escalate
+}
+  
   val pendingCon = new Connections()
   val con = new Connections()
   println("*** (MainActor) Initializing HTTP Actor ***")
-  val http = context.actorOf(Props(new httpActor(const.uname,const.trackerHost)))
+  val http = context.actorOf(Props(new httpActor(const.uname,const.trackerHost)),name="httpCom")
   var knownDevs = Map[String,Dev]()
   
   def decideIP(remoteDev:Dev):String = {
@@ -66,6 +85,8 @@ class MainActor extends Actor {
       }
     return host
   }
+  
+  
   
   def receive = {
     /**
@@ -119,7 +140,18 @@ class MainActor extends Actor {
               }
 
             }
-            case None => println("Tried to access an unknown device")
+            case None => {
+              println("Device not known locally, asking server (CON_OUT)")
+              httpFuncs.getDevInfo(devID, const.devInfoURL(devID)) match {
+                case Some(dev) => {
+                  knownDevs += (devID->dev)
+                  pendingCon.add(devID,actor) //reset old state
+                  self ! CON_OUT(devID,port)
+                  
+                }
+                case None => println("Tried to access an unknown device, request ignored")
+              }
+            }
           }
         }
         case None => println("Tried to pop a pending connection that does not exist")
@@ -155,7 +187,16 @@ class MainActor extends Actor {
               case t:TimeoutException => println(s"(RUDP) connection timed out on $host:$port")
             }
           }
-          case None => println("Tried to access an unknown device")
+          case None => {
+            println("Device not known locally, asking server (CON_IN)")
+            httpFuncs.getDevInfo(devID, const.devInfoURL(devID)) match {
+              case Some(dev) => {
+                knownDevs += (devID->dev)
+                self ! CON_IN(devID,port)
+              }
+              case None => println("Tried to access an unknown device, request ignored")
+            }
+          }
         }
       }
     }

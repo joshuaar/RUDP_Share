@@ -84,13 +84,13 @@ object ASK_CON {
   }
 }
 
-case class ACK(devID:String,port:Int)
+case class ACK(devID:String,port:String)
 object ACK {
-    def fromMap(m:Map[String,String]):ASK_CON = {
-    new ASK_CON(m getOrElse ("devID","nil"), 
+    def fromMap(m:Map[String,String]):ACK = {
+    new ACK(m getOrElse ("devID","nil"), 
           m getOrElse("port","nil"))
   }
-  def fromJSON(j:String):ASK_CON = {
+  def fromJSON(j:String):ACK = {
     val js = JSON.parseFull(j) match {
       case Some(stuff)=>stuff.asInstanceOf[Map[String,String]]
       case None => throw new JSONException("JSON parse error while parsing ack request")
@@ -102,10 +102,12 @@ object ACK {
 object httpFuncs {
   val config = Config(connectTimeout = 10000, readTimeout = 60000)
   
-  def getDevInfo(devID:String,trackerHost:String):Option[Dev] = {
+  def getDevInfo(devID:String,prefix:String):Option[Dev] = {
     def http = new HttpClient(config)
-    val url = s"$trackerHost/p/$devID"
+    val url = s"$prefix/$devID"
     val res = http.get(new URL(url))
+    println(s"---[httpFuncs] Device info for $devID:")
+    println(res.body.asString)
     try{
     	return Some(Dev.fromJSON(res.body.asString))
     }
@@ -151,6 +153,8 @@ class httpActor(uid:String, trackerHost:String) extends Actor {
    * This gets picked up by the ASK_CON handler
    */
   def reqConnect(d:Dev,port:Int) = {
+    val dID = d.devID
+    println(s"Asking remote device $dID to connnect on local port $port")
     val res = sendMap(d.devID,Map[String,String](("type","ask"),("devID",devID),("port",port.toString)))
 
   }
@@ -159,7 +163,9 @@ class httpActor(uid:String, trackerHost:String) extends Actor {
     if(devID==""){
       throw new Exception("We don't have a local device id!")
     }
-     val res = sendMap(d.devID,Map[String,String](("type","ack"),("devID",devID),("port",port.toString)))
+    val dID = d.devID
+    println(s"sending Ack to remote device $dID and local port $port")
+    val res = sendMap(d.devID,Map[String,String](("type","ack"),("devID",devID),("port",port.toString)))
   }
     
   def getPeers():Map[String,Dev] = {
@@ -230,11 +236,14 @@ class httpActor(uid:String, trackerHost:String) extends Actor {
     
     //This means the remote actor indicated by devID is listening for connections on port port 
     case ACK(devID,port) => {
+      println(s"Received (ACK) from remote device $devID and remote port $port")
       parent ! CON_OUT(devID,port.toInt) //Send device ID to main actor. This means that actor should try to connect to the remote host
     }
     
     //Sending an acknowledgement. This means the main actor is listening for connections from device d on port port
     case ACK_CON(d,port) => {
+      val dID = d.devID
+      println(s"Received (ACK_CON) from remote device $dID and remote port $port")
       sendAck(d,port)
     }
     
@@ -243,6 +252,7 @@ class httpActor(uid:String, trackerHost:String) extends Actor {
      * It is the first encounter with a remote host over the relay
      */
     case ASK_CON(devID,port) => {
+      println(s"Received (ASK_CON) from remote device $devID and remote port $port")
       parent ! CON_IN(devID,port.toInt)
     }
     

@@ -29,9 +29,10 @@ object const {
     
   type devMap = Map[String,Dev]
   
-  def devInfoURL(devID:String):String ={
-    s"$trackerHost/$uname/$devID"
+  def getDevInfo(devID:String):Option[Dev] = {
+    httpFuncs.getDevInfo(devID,s"$trackerHost/u/$uname")
   }
+  
 }
 
 class Connections {
@@ -119,6 +120,7 @@ class MainActor extends Actor {
      * and is waiting for an inbound connection.
      */
     case CON_OUT(devID,port:Int) => {
+      println(s"Received connection confirmation (CON_OUT) from remote DevID:$devID")
       pendingCon.pop(devID) match {
         case Some(actor) => {
           knownDevs get devID match {
@@ -136,13 +138,16 @@ class MainActor extends Actor {
                 }
               }
               future onFailure {
-                case t:TimeoutException => println(s"(RUDP) connection timed out on $host:$port")
+                case t:TimeoutException => {
+                  println(s"(RUDP) client connection timed out on $host:$port")
+                  actor ! PoisonPill
+                }
               }
 
             }
             case None => {
               println("Device not known locally, asking server (CON_OUT)")
-              httpFuncs.getDevInfo(devID, const.devInfoURL(devID)) match {
+             const.getDevInfo(devID) match {
                 case Some(dev) => {
                   knownDevs += (devID->dev)
                   pendingCon.add(devID,actor) //reset old state
@@ -165,6 +170,7 @@ class MainActor extends Actor {
      * port: the remote's port
      */
     case CON_IN(devID,port:Int) => {
+      println(s"Received connection request (CON_IN) from DevID: $devID")
       if(!con.isConnected(devID)){
 
         knownDevs get devID match {
@@ -184,13 +190,18 @@ class MainActor extends Actor {
               }
             }
             future onFailure {
-              case t:TimeoutException => println(s"(RUDP) connection timed out on $host:$port")
+              case t:TimeoutException => {
+                println(s"(RUDP) server connection timed out on $host:$port")
+                serv ! PoisonPill
+                }
             }
           }
           case None => {
             println("Device not known locally, asking server (CON_IN)")
-            httpFuncs.getDevInfo(devID, const.devInfoURL(devID)) match {
+            const.getDevInfo(devID) match {
               case Some(dev) => {
+                val remoteDevID = dev.devID
+                println(s"Found DevID: $remoteDevID on the server")
                 knownDevs += (devID->dev)
                 self ! CON_IN(devID,port)
               }

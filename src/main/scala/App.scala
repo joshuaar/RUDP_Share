@@ -218,7 +218,8 @@ class MainActor extends Actor {
   }
 }
 
-object AppTest extends App {
+object AppTest{ //extends App {
+  System.setProperty("java.net.preferIPv4Stack" , "true")
   val system = ActorSystem("RUDPSystem")
   val main = system.actorOf(Props(new MainActor()), name = "test")
 }

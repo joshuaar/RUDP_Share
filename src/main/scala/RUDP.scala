@@ -1,6 +1,6 @@
 package share.protocol
 import chat.msg._
-import net.rudp._
+//import net.rudp._
 import java.net._
 import akka.actor._
 import java.io._
@@ -8,6 +8,7 @@ import scala.concurrent._
 import akka.pattern.ask
 import akka.util.Timeout
 import scala.concurrent.duration._
+import udt._
 
 
 object wireCodes {
@@ -62,7 +63,7 @@ object wireCodes {
    * Usage server:
    * 	transferMetaInfo(s,21305) // Size of file is 21305 bytes
    */
-  def transferMetaInfo(s:ReliableSocket,sz:Long = -1):Long={
+  def transferMetaInfo(s:UDTSocket,sz:Long = -1):Long={
     println(sz)
     val in = new BufferedReader(new InputStreamReader(s.getInputStream()))
     val out = new PrintWriter(s.getOutputStream(), true)
@@ -83,7 +84,7 @@ object wireCodes {
 }
 
 //Sends messages and files to remote
-class rudpSender(s:ReliableSocket,parent:ActorRef) extends Actor{
+class rudpSender(s:UDTSocket,parent:ActorRef) extends Actor{
   import context._
   var out = new PrintWriter(s.getOutputStream(), true);
   def receive = {
@@ -114,15 +115,16 @@ class rudpActor(lp:Int) extends Actor{
       val rport = l.port
       puncher.punch(rhost,localPort,rport) //def punch(host:String,localPort:Int,remotePort:Int,retransmits:Int=100)
       Thread.sleep(50)
-      val serverSocket = new ReliableServerSocket(localPort)
+      UDTReceiver.connectionExpiryDisabled=true
+      val serverSocket = new UDTServerSocket(localPort)
       val future = Future{ serverSocket.accept() }
       try{
         
-        self ! Await.result(future, l.timeout second).asInstanceOf[ReliableSocket] 
+        self ! Await.result(future, l.timeout second).asInstanceOf[UDTSocket] 
         sender ! CONNECTED
         
       }
-      catch{case s:SocketException => {
+      catch{case s:TimeoutException => {
         
         println(s"[RUDP]timed out listening for $rhost:$rport")
         
@@ -133,21 +135,25 @@ class rudpActor(lp:Int) extends Actor{
     case CONNECT(ip,port) => {
       println(s"Attempting RUDP Connection to $ip on port $port")
       Thread.sleep(100)
-      val cli = new ReliableSocket(ip,port,localHost,localPort)
+      UDTReceiver.connectionExpiryDisabled=true
+      val cli = new UDTClient(InetAddress.getLocalHost(),localPort)
+      cli.connect(ip,port)
       self ! cli
       sender ! CONNECTED
     }
     
-    case s:ReliableSocket => {
-      val hostName = s.getInetAddress().getCanonicalHostName()
-      val port = s.getPort()
-      listener = context.actorOf(Props(new rudpListener(s,self)), name="listen")
+    case s:UDTSocket => {
+      //val hostName = s.getInetAddress().getCanonicalHostName()
+      //val port = s.getPort()
+      listener = context.actorOf(Props(new rudpListener(IOStreams go here,self)), name="listen")
       listener ! LISTEN
       send = new PrintWriter(s.getOutputStream(), true)
       become(connected)
-      println(s"connected to $hostName on remote port $port")
-
+      println(s"connected on remote port $lp")
       }
+    case s:UDTClient => {
+      blah!
+    }
   }
   
   def connected:Receive = {
@@ -191,13 +197,14 @@ class rudpActor(lp:Int) extends Actor{
 }
 
 class fileSender(lPort:Int,send:SEND,localHost:InetAddress) extends Actor{
-  val sock = new ReliableSocket(send.host,send.port,localHost,lPort)
+  val sock = new UDTClient(localHost,lPort)
+  sock.connect(send.host,send.port)
   println("file sender is connected")
   self ! sock
   
   //WRITE FILES TO SOCKETS
   def receive = {
-    case s:ReliableSocket => {
+    case s:UDTClient => {
       val ft = new FileTransfer(s)
       ft.send(send.resource,send.offset)
       self ! PoisonPill
@@ -292,20 +299,30 @@ object api {
   }
 }
 
-object rudp {//extends App {
+object rudp extends App {
+
+  val system = ActorSystem("ChatSystem")
   
-  //val system = ActorSystem("ChatSystem")
-  val serv = api.makeServer("serv",6004,"localhost",6005)
-  val cli = api.makeClient("cli",6005,"localhost",6004)
- // serv ! LISTEN
-  Thread.sleep(500)
-  println("Attempting connection")
- // cli ! CONNECT("localhost",6004)
+  if(args(3).toInt == 1){
+    val serv = api.makeServer("serv",args(1).toInt,args(0),args(2).toInt)
+  }
+  else{
+    val serv = api.makeClient("cli",args(1).toInt,args(0),args(2).toInt)
+    Thread.sleep(500)
+    serv ! ECHO("ECHOTEST!!")
+  }
+  
+  //val serv = api.makeServer("serv",41843,"localhost",46170)
+  //val cli = api.makeClient("cli",46170,"localhost",41843)
+  //serv ! LISTEN
+  //Thread.sleep(500)
+  //println("Attempting connection")
+  //cli ! CONNECT("localhost",6004)
  // println("Testing Message sending")
-  Thread.sleep(1000)
+  //Thread.sleep(1000)
   
   //Test send message
-  cli ! ECHO("ECHOME")
+  //cli ! ECHO("ECHOME")
   //serv ! SENDMESSAGE("Message2")
   
   //Test file request

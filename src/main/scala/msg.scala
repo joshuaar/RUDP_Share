@@ -19,7 +19,7 @@ case class SENDFILE(f:File)//Send file
 case class SENDFILEREQ//Request send file
 case class FILEDOWNLOADED(f:File)
 case class INVALIDCOMMAND(e:String)
-case class SEND(resource:String,host:String,port:Int,offset:Long)
+case class SEND(resource:String,offset:Long)
 case class GET(r:String,destination:String,offset:Long=0)
 case class ECHO(msg:String="Echo!")
 case class CONNECTED extends msg

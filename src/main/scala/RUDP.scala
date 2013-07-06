@@ -1,6 +1,6 @@
 package share.protocol
 import chat.msg._
-//import net.rudp._
+import net.rudp._
 import java.net._
 import akka.actor._
 import java.io._
@@ -10,7 +10,9 @@ import akka.util.Timeout
 import scala.concurrent.duration._
 import udt._
 
+case class Con(serv:Server,cli:Client)
 
+  
 object wireCodes {
   val FT_CON = ":c(.*):(.*)".r // Address:Port
   val FT_REQ = "::(.*):(.*):(.*):(.*)".r//resource:IP:Port:offset
@@ -100,11 +102,15 @@ class rudpSender(s:UDTSocket,parent:ActorRef) extends Actor{
 * Starts listening on a given port
 */
 class rudpActor(lp:Int) extends Actor{
+  
+  implicit def g2g(g:GET) = getReq(g.r,g.offset)
+  implicit def s2g(s:SEND) = getReq(s.resource,s.offset)
+  
   val localPort = lp
   val localHost = InetAddress.getLocalHost()
   var listener:ActorRef = null
-  var send:PrintWriter = null
-  
+  var cli:Client = null
+  var serv:Server = null
   import context._
   def receive = {
     
@@ -113,16 +119,11 @@ class rudpActor(lp:Int) extends Actor{
       println(s"Listening on $localPort")
       val rhost = l.host
       val rport = l.port
-      puncher.punch(rhost,localPort,rport) //def punch(host:String,localPort:Int,remotePort:Int,retransmits:Int=100)
-      Thread.sleep(50)
-      UDTReceiver.connectionExpiryDisabled=true
-      val serverSocket = new UDTServerSocket(localPort)
-      val future = Future{ serverSocket.accept() }
       try{
-        
-        self ! Await.result(future, l.timeout second).asInstanceOf[UDTSocket] 
+        val s = new Server(localPort,rhost,rport)
+        val c = new Client(localPort-1,rhost,rport-1)
+        self ! Con(s,c)
         sender ! CONNECTED
-        
       }
       catch{case s:TimeoutException => {
         
@@ -134,41 +135,33 @@ class rudpActor(lp:Int) extends Actor{
     
     case CONNECT(ip,port) => {
       println(s"Attempting RUDP Connection to $ip on port $port")
-      Thread.sleep(100)
-      UDTReceiver.connectionExpiryDisabled=true
-      val cli = new UDTClient(InetAddress.getLocalHost(),localPort)
-      cli.connect(ip,port)
-      self ! cli
-      sender ! CONNECTED
+      try{
+        val c = new Client(localPort,ip,port)
+        val s = new Server(localPort-1,ip,port-1)
+        self ! Con(s,c)
+        sender ! CONNECTED
+      }
+      catch{case s:TimeoutException => {
+        println(s"[RUDP]timed out listening for $ip:$port")
+        }
+      }
     }
     
-    case s:UDTSocket => {
-      //val hostName = s.getInetAddress().getCanonicalHostName()
-      //val port = s.getPort()
-      listener = context.actorOf(Props(new rudpListener(IOStreams go here,self)), name="listen")
+    case Con(server,client) => {
+      
+      listener = context.actorOf(Props(new rudpListener(server)), name="listen")
       listener ! LISTEN
-      send = new PrintWriter(s.getOutputStream(), true)
+      cli = client
+      serv = server
       become(connected)
       println(s"connected on remote port $lp")
       }
-    case s:UDTClient => {
-      blah!
-    }
   }
   
   def connected:Receive = {
-    case RECVDMESSAGE(s) => {
-      println("I got a message on the wire!: "+s)
-      //listener ! LISTEN
-    }
-    case SENDMESSAGE(m) => {
-      println("outer sending message")
-      send.println(m)
-      println("outer sent")
-    }
     
-    case ECHO(m) => {
-      send.println(s":ECHO:$m")
+    case a:any => {
+      Client.writeString(a.toString(), cli.os)
     }
     
     case req:GET => {
@@ -176,111 +169,53 @@ class rudpActor(lp:Int) extends Actor{
       val resource = req.r
       val destination = req.destination
       //Determine from STUN server which IP and port to connect on
-      val localPort = wireCodes.getLocalPort()
-      val lh = localHost.getHostName() 
-      
-      //Initialize listener
-      val fileGetter = context.actorOf(Props(new fileListener(localPort,req)))
-      
-      send.println(wireCodes.sendreq(req,lh,localPort)) // send a request for a resource
-
-    }
-    
-    case s:SEND => { //got a request from remote for resource
-      val lPort = wireCodes.getLocalPort()
-      //Hole punch code goes here
-      //
-      println("Got request from remote for a resource")
-      val fileSender = context.actorOf(Props(new fileSender(lPort,s,localHost)))
-    }
-  }
-}
-
-class fileSender(lPort:Int,send:SEND,localHost:InetAddress) extends Actor{
-  val sock = new UDTClient(localHost,lPort)
-  sock.connect(send.host,send.port)
-  println("file sender is connected")
-  self ! sock
-  
-  //WRITE FILES TO SOCKETS
-  def receive = {
-    case s:UDTClient => {
-      val ft = new FileTransfer(s)
-      ft.send(send.resource,send.offset)
-      self ! PoisonPill
-    }
-  }
-}
-
-class fileListener(lp:Int,req:GET) extends Actor{
-  import context._
-  val destination = req.destination
-  //ServerSocket attempt a listen
-  val serverSocket = new ReliableServerSocket(lp)
-  val future = Future{ serverSocket.accept() }
-  val sock:ReliableSocket = null
-  println("File receiver beginning connection")
-  //Failure to connect, or connect
-  try{ self ! Await.result(future, 10 second).asInstanceOf[ReliableSocket] }
-  catch{ 
-    case t:TimeoutException => {
-      println("File listen timeout")
-      self ! PoisonPill // kill
+      val res = cli.getFile(req,destination)
+      if(res != -1){
+        val newOffset = res+req.offset
+        self ! GET(req.r,req.destination,newOffset)
+      }
+      else {
+        println(s"File $resource gotten successfully")
       }
     }
-  //READ FILES FROM SOCKETS
-  def receive = {
-    case s:ReliableSocket => {
-      println("File Receiver is connected")
-      val ft = new FileTransfer(s)
-      val newOff = ft.get(destination,"",req.offset)
-      if(newOff != -1)
-    	  parent ! GET(req.r,destination,newOff)
-      self ! PoisonPill
-    }
-    case _ => println("Received a message")
   }
 }
 
+
+
 //Listens for messages and files from remote
-class rudpListener(s:ReliableSocket,parent:ActorRef) extends Actor{
+class rudpListener(s:Server) extends Actor{
   import context._
-  var in = new BufferedReader(new InputStreamReader(s.getInputStream()))
   def receive = {
-    case LISTEN => {
-      become(cmdListen)
-      self ! LISTEN
-    }
-  }
-  def cmdListen:Receive = {
     //LISTEN FOR COMMANDS
     //	Program new behaviors here, translate from wire codes to actor instructions
     case LISTEN => {
       println("Listener Online")
-      val data = in.readLine()
+      try{
+      val data = s.listen()
       data match {
-        case wireCodes.FT_REQ(id,host,port,offset) => {
-          val f = new File(id)
-          parent ! SEND(id,host,port.toInt,offset.toLong) //Got a request for a resource
-          println(s"Recieved a get request from $host, sending to handler")
+        case g:getReq => {
+          println(s"Received a get request, handling")
+          s.sendFile(g)
         }
-        case wireCodes.FT_STOP => {
-          println("stopped listening on request from remote")
-        }
-        case wireCodes.FT_CON(ip,port) => {
-          println("Now I got the connection information from remote")
-          parent ! (ip,port)
-        }
-        case wireCodes.ECHO_(m) => {
-          parent ! SENDMESSAGE(m)
-        }
-        case s:String => {
-          parent ! RECVDMESSAGE(s)
-          println("Sent unknown message to handler")
+        case a:any => {
+          val matcher = "GeT:(.*):(.*)".r
+          a.msg match {
+            case getReq.matcher(a,b) => println("matched getreq")
+            case _ =>
+          }
+          println("Received an unknown request: "+a.msg)
         }
       }
       self ! LISTEN
       println("Listener sent reactivation signal")
+      }
+      catch {
+        case e:TimeoutException => {
+          self ! LISTEN
+          println("Listener sent reactivation signal")
+        }
+      }
     }
   }//End cmdListener
 }
@@ -288,32 +223,41 @@ class rudpListener(s:ReliableSocket,parent:ActorRef) extends Actor{
 object api {
   val system = ActorSystem("RUDPSystem")
   def makeServer(name:String,port:Int,host:String,remotePort:Int):ActorRef = {
+    println("Making Server")
 	  val serv = system.actorOf(Props(new rudpActor(port)), name = name)
 	  serv ! LISTEN(host,remotePort,10)//LISTEN(host:String,port:Int,timeout:Int=0)
 	  return serv
   }
   def makeClient(name:String,port:Int,host:String,remotePort:Int):ActorRef = {
+    println("Making Client")
     val cli = system.actorOf(Props(new rudpActor(port)), name = name)
     cli ! CONNECT(host,remotePort)
     return cli
   }
 }
 
-object rudp extends App {
+object rudp{// extends App {
 
   val system = ActorSystem("ChatSystem")
   
-  if(args(3).toInt == 1){
-    val serv = api.makeServer("serv",args(1).toInt,args(0),args(2).toInt)
-  }
-  else{
-    val serv = api.makeClient("cli",args(1).toInt,args(0),args(2).toInt)
-    Thread.sleep(500)
-    serv ! ECHO("ECHOTEST!!")
-  }
+  //if(args(3).toInt == 1){
+    //val serv = api.makeServer("serv",args(1).toInt,args(0),args(2).toInt)
+  //}
+  //else{
+    //val serv = api.makeClient("cli",args(1).toInt,args(0),args(2).toInt)
+    //Thread.sleep(500)
+    //serv ! ECHO("ECHOTEST!!")
+  //}
   
-  //val serv = api.makeServer("serv",41843,"localhost",46170)
-  //val cli = api.makeClient("cli",46170,"localhost",41843)
+  val serv = api.makeServer("serv",41843,"localhost",46170)
+  val cli = api.makeClient("cli",46170,"localhost",41843)
+  Thread.sleep(3000)
+  println("Sending message")
+  //while(true){
+  cli ! any(readLine)
+  Thread.sleep(500)
+  cli ! GET("/home/josh/test","/home/josh/testCopy",0)
+  //}
   //serv ! LISTEN
   //Thread.sleep(500)
   //println("Attempting connection")

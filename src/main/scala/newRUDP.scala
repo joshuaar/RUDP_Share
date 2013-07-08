@@ -75,23 +75,23 @@ case class ack(msg:String) extends Request {
 
 object Server {
   def makeServer(localPort:Int, remoteHost:String,remotePort:Int):UDTSocket = {
-    //puncher.punch(remoteHost, localPort, remotePort) //Punch a hole
+    puncher.punch(remoteHost, localPort, remotePort) //Punch a hole
     val serverSocket = new UDTServerSocket(InetAddress.getLocalHost(),localPort:Int)
     val future = Future {
       serverSocket.accept()
     }
-    Await.result(future,15 second).asInstanceOf[UDTSocket]
+    Await.result(future,60 second).asInstanceOf[UDTSocket]
   }
 }
   
 object Client {
   def makeClient(localPort:Int, remoteHost:String,remotePort:Int):UDTClient = {
-    puncher.punch(remoteHost, localPort, remotePort) //Punch a hole
+    //puncher.punch(remoteHost, localPort, remotePort) //Punch a hole
     val cli = new UDTClient(InetAddress.getLocalHost(),localPort)
     val future = Future {
       cli.connect(remoteHost,remotePort)
     }
-    Await.result(future,15 second).asInstanceOf[Unit]
+    Await.result(future,60 second).asInstanceOf[Unit]
     cli
   }
  

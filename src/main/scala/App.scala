@@ -23,6 +23,8 @@ import scala.concurrent.duration._
 import akka.actor.AllForOneStrategy
 import akka.actor.SupervisorStrategy._
 
+case class BROADCAST(msg:String)
+
 object const {
   val uname = "default"
   val trackerHost = "http://smaugshideout.com:3000"
@@ -37,6 +39,10 @@ object const {
 
 class Connections {
   var activeConnections = Map[String,ActorRef]()
+  
+  def getAll():List[ActorRef] = {
+    return activeConnections.values.toList
+  }
   
   def add(devID:String,a:ActorRef) = {
     activeConnections = activeConnections + (devID -> a) 
@@ -128,7 +134,7 @@ class MainActor extends Actor {
               //Decide which IP to use (internal or external)
               val host = decideIP(dev)
               
-              implicit val timeout = Timeout(15 seconds)
+              implicit val timeout = Timeout(60 seconds)
               val future = actor ? CONNECT(host,port)
               println("Client actor attempting connection to host")
               future onSuccess {
@@ -180,8 +186,8 @@ class MainActor extends Actor {
             //Decide which IP to connect on
             val host = decideIP(dev)
             
-            implicit val timeout = Timeout(15 seconds)
-            val future = serv ? LISTEN(host,port,15)
+            implicit val timeout = Timeout(60 seconds)
+            val future = serv ? LISTEN(host,port,60)
             http ! ACK_CON(dev,lport) // send my local port to the remote device
             future onSuccess {
               case CONNECTED => {
@@ -211,7 +217,7 @@ class MainActor extends Actor {
         }
       }
     }
-    
+        
     case s:String => {
       
     }

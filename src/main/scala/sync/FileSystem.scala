@@ -1,10 +1,28 @@
 package share.sync
-import java.io.File
+//import java.io.File
+import scala.util.parsing.json._
+import java.io._
 
 trait Types {
   type Sort = (String, Long)
   type Children = Array[FileTree]
+  type JSONNode = Map[String,List[Any]]
   implicit def arrayToList[A](a: Array[A]) = a.toList
+}
+
+case class fileObj(isDirectory:Boolean,getName:String,length:Long) {
+  def toJSON():String = {
+    s""""m":[$isDirectory,"$getName",$length]"""
+  }
+}
+
+object FileTree {
+  def fromByteArray(a:Array[Byte]):FileTree = {
+    val bis = new ByteArrayInputStream(a)
+    val in = new ObjectInputStream(bis)
+    val output = in.readObject()
+    return output.asInstanceOf[FileTree]
+  }
 }
 
 /**
@@ -13,7 +31,7 @@ trait Types {
 @serializable
 class FileTree(f: File) extends Types{
   val test = "hello"
-  private val root = f
+  private var root = makeRoot(f)
   private var children = Array[FileTree]()
   if(f.isDirectory())
     children = buildTree()
@@ -21,25 +39,54 @@ class FileTree(f: File) extends Types{
     val children = f.listFiles().map((x: File) => new FileTree(x))
     return children
   }
+  
+  def toJSON():String = {
+    val rootJSON = root.toJSON()
+    val childrenJSONChunks = children.map((x:FileTree) => x.toJSON())
+    var childrenJSON = ""
+    if(childrenJSONChunks.length == 0){}
+    else if(childrenJSONChunks.length == 1){
+      childrenJSON = childrenJSONChunks(0)
+    }
+    else {
+      childrenJSON = childrenJSONChunks.reduce((x:String,y:String) => s"$x,$y")
+    }
+    s"""{$rootJSON,"c":[$childrenJSON]}"""
+  }
+  
+  def toByteArray():Array[Byte] = {
+    val bos = new ByteArrayOutputStream()
+    val out = new ObjectOutputStream(bos)
+    out.writeObject(this)
+    out.close()
+    val output = bos.toByteArray()
+    bos.close()
+    output
+  }
+  
+  def makeRoot(f:File):fileObj = {
+    return fileObj(f.isDirectory(),f.getName(),f.length())
+  }
+  
   def listChildNames(): Array[String] = {
-    return children.map(_.root.getName())
+    return children.map(_.root.getName)
   }
   def getChildren(): Children = {
     return children
   }
   def getChildDirs(): Children = {
-    return children.filter(_.root.isDirectory())
+    return children.filter(_.root.isDirectory)
   }
   def getChildDirNames(): Array[String] = {
-    return getChildren.map(_.root.getName())
+    return getChildren.map(_.root.getName)
   }
   def getSort():Sort = {
-    return (root.getName(), root.length())
+    return (root.getName, root.length)
   }
-  def getNode():File = {
+  def getNode():fileObj = {
     return root
   }
-  def getAll():List[File] = {
+  def getAll():List[fileObj] = {
     var x = root
     val ch = children
     root :: ch.flatMap(_.getAll())
@@ -52,12 +99,12 @@ object funcs extends Types {
    * Actions generated to fix out of sync files
    */
   abstract class Action
-  case class PUT(what: File) extends Action
-  case class GET(what: File) extends Action
-  case class RMREMOTE(what: File) extends Action
-  case class RMLOCAL(what: File) extends Action
-  case class CONFLICT(local: File, remote: File) extends Action
-  case class MISSING(what: File) extends Action
+  case class PUT(what: fileObj) extends Action
+  case class GET(what: fileObj) extends Action
+  case class RMREMOTE(what: fileObj) extends Action
+  case class RMLOCAL(what: fileObj) extends Action
+  case class CONFLICT(local: fileObj, remote: fileObj) extends Action
+  case class MISSING(what: fileObj) extends Action
   
   /**
    * These functions check if resources are synced or not by testing equality
@@ -92,25 +139,6 @@ object funcs extends Types {
     var a = thisTree map (_.getSort())
     var b = otherTree map (_.getSort())
     val r = refTree map (_.getSort())
-//    
-//    if (a.isEmpty){
-//      println("A is empty")
-//    }
-//    else{
-//      println(a.get)
-//    }
-//    if (b.isEmpty){
-//      println("b is empty")
-//    }
-//    else{
-//      println(b.get)
-//    }
-//    if (r.isEmpty){
-//      println("r is empty")
-//    }
-//    else{
-//      println(r.get)
-//    }
     
     if(a.isEmpty){ // a is empty
       if(b.isEmpty)
@@ -202,8 +230,7 @@ object funcs extends Types {
   }
 }
 
-object run{
-  def main(args:Array[String]){
+object run extends App{
   def getDiff(x:String,y:String,z:String):List[funcs.Action] = {
     val a = new FileTree(new File(x))
     val b = new FileTree(new File(y))
@@ -211,9 +238,16 @@ object run{
     val f = funcs.diff(Option(a),Option(b),Option(r))
     return f
   }
-    val f = getDiff("/home/josh/Downloads","src/test/scala/dirs/dir1","src/test/scala/dirs/dir1/dir1_del/dir1")
-    println("Printing Missing")
-    println(f.mkString("\n"))
+  
+  val a = new FileTree(new File("src/test/scala/dirs/dir1"))
+  val b = a.toJSON()
+  println(b)
+  val c = a.toByteArray
+  val d = FileTree.fromByteArray(c)
+  println(d.toJSON)
+   // val f = getDiff("/home/josh/Downloads","src/test/scala/dirs/dir1","src/test/scala/dirs/dir1/dir1_del/dir1")
+   // println("Printing Missing")
+   // println(f.mkString("\n"))
 //    val a = new FileTree(new File("src/test/scala/dirs/dir1"))
 //    val r = a
 //    val b = new FileTree(new File("src/test/scala/dirs/dir1_del/dir1"))
@@ -228,4 +262,3 @@ object run{
     //val stuff = new File("/home/josh/Documents/").listFiles().map(_.listFiles()) 
     //println(stuff mkString "\n")
   }
-}

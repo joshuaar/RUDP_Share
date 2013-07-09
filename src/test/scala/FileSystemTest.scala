@@ -1,7 +1,7 @@
 import org.scalatest.FunSuite
 import share.sync._
 import java.io.File
-class FileTreeTest extends FunSuite {
+class FileTreeCreate extends FunSuite {
   test("Test Make FileTree") {
     expect(3) { 
       val x = new File("src/test/scala/dirs/dir1")
@@ -20,6 +20,17 @@ class FileTreeTest extends FunSuite {
   }
 }
 
+class FileTreeSerialize extends FunSuite {
+  test("Test JSON Formatting and Serialization") {
+    expect(true) {
+       val a = new FileTree(new File("src/test/scala/dirs/dir1"))
+       val b = a.toByteArray()
+       val c = FileTree.fromByteArray(b)
+       a.toJSON().equals(c.toJSON())
+    }
+  }
+}
+
 class DiffTest extends FunSuite {
   test("Test RMLOCAL"){
     expect(true){
@@ -29,7 +40,7 @@ class DiffTest extends FunSuite {
     val f = funcs.diff(Option(a),Option(b),Option(a))
       var ret = false
       if(f.length == 1){
-        println(f(0))
+        //println(f(0))
         ret = f(0) match {
           case funcs.RMLOCAL(something) => true
           case _ =>false
@@ -50,7 +61,7 @@ class DiffTest extends FunSuite {
       val f = getDiff("src/test/scala/dirs/dir1_del/dir1","src/test/scala/dirs/dir1","src/test/scala/dirs/dir1")
       var ret = false
       if(f.length == 1){
-        println(f(0))
+        //println(f(0))
         ret = f(0) match {
           case funcs.RMREMOTE(something) => true
           case _ =>false
@@ -64,7 +75,7 @@ class DiffTest extends FunSuite {
       val f = getDiff("src/test/scala/dirs/dir1_del/dir1","src/test/scala/dirs/dir1","src/test/scala/dirs/dir1/dir1_del/dir1")
       var ret = false
       if(f.length == 1){
-        println(f(0))
+       // println(f(0))
         ret = f(0) match {
           case funcs.GET(something) => true
           case _ =>false
@@ -79,12 +90,12 @@ class DiffTest extends FunSuite {
       val f = getDiff("src/test/scala/dirs/dir1","src/test/scala/dirs/dir1_del/dir1","src/test/scala/dirs/dir1_del/dir1")
       var ret = false
       if(f.length == 1){
-        println(f(0))
+        //println(f(0))
         ret = f(0) match {
           case funcs.PUT(something) => true
           case _ =>false
         }
-        println(f)
+        //println(f)
         ret
       }
     }
@@ -94,7 +105,7 @@ class DiffTest extends FunSuite {
       val f = getDiff("src/test/scala/dirs/dir1_changed/dir1","src/test/scala/dirs/dir1","src/test/scala/dirs/dir1_del/dir1")
       var ret = false
       if(f.length == 1){
-        println(f(0))
+       // println(f(0))
         ret = f(0) match {
           case funcs.CONFLICT(something,elses) => true
           case _ =>false
@@ -108,7 +119,7 @@ class DiffTest extends FunSuite {
       val f = getDiff("src/test/scala/dirs/dir1_del/dir1","src/test/scala/dirs/dir1_del/dir1","src/test/scala/dirs/dir1")
       var ret = false
       if(f.length == 1){
-        println(f(0))
+       // println(f(0))
         ret = f(0) match {
           case funcs.MISSING(something) => true
           case _ =>false

@@ -11,6 +11,7 @@ import scala.concurrent.duration._
 import udt._
 import ExecutionContext.Implicits.global
 import java.nio.ByteBuffer
+import share.sync._
 
 case class ParseException(msg:String) extends Exception
 
@@ -70,6 +71,23 @@ object any extends reqFactory {
 case class ack(msg:String) extends Request {
   override def toString():String = {
     return s"AcK:$msg"
+  }
+}
+
+case class ftReq extends Request {
+  override def toString():String = {
+    "fTR:"
+  }
+}
+
+object ftReq extends reqFactory {
+  val matcher = "fTR:".r
+  def fromString(req:String):ftReq = {
+    req match {
+      case `matcher` => return ftReq()
+      case s:String => throw new ParseException("Unexpected format for get request: "+ s)
+      case _ => throw new ParseException("Unknown error")
+    }
   }
 }
 
@@ -142,9 +160,47 @@ object Client {
    return reqType.fromString(req)
  }
  
+ def expectObj[X<:Byteable](is:InputStream,timeout:Int=10):X = {
+   val future = Future{
+   val buf = new Array[Byte](4)
+   while(is.read(buf)==0){
+     //println("Read nothing first")
+     Thread.sleep(100)
+   }
+   println("Read something")
+   val bb = ByteBuffer.wrap(buf)
+   val len = bb.getInt()
+   println(s"Bytes to read: $len")
+   val reqStream = new ByteArrayOutputStream()
+   var bytesRead = 0
+   val buf2 = new Array[Byte](2048)
+   var nRead = is.read(buf2)
+   while(nRead == 0){
+     println("Read nothing second")
+     Thread.sleep(100)
+     nRead = is.read(buf2)
+   }
+   while(bytesRead < len){
+     reqStream.write(buf2,0,nRead)
+     println(s"Read: $bytesRead length:$len")
+     bytesRead+=nRead
+     nRead=is.read(buf2)
+   }
+   reqStream.toByteArray()
+   }
+   val req = Await.result(future,timeout second).asInstanceOf[Array[Byte]]
+   return ByteableFactory.fromByteArray[X](req)
+ }
+ 
  def writeInt(i:Int,os:OutputStream) = {
    val bb = ByteBuffer.allocate(4)
    bb.putInt(i)
+   bb.flip()
+   os.write(bb.array())
+ }
+ def writeLong(i:Long,os:OutputStream) = {
+   val bb = ByteBuffer.allocate(8)
+   bb.putLong(i)
    bb.flip()
    os.write(bb.array())
  }
@@ -154,6 +210,12 @@ object Client {
    val len = bytes.length
    writeInt(len,os)
    os.write(bytes)
+ }
+ def writeBytes(b:Array[Byte],os:OutputStream) = {
+   println(s"Writing byte array to the wire")
+   val len = b.length
+   writeInt(len,os)
+   os.write(b)
  }
  
  def copy(in:InputStream, out:OutputStream,nBytes:Long):Long = {
@@ -187,6 +249,21 @@ class Client(localPort:Int, remoteHost:String,remotePort:Int) {
   val udt = Client.makeClient(localPort,remoteHost,remotePort)
   val os = udt.getOutputStream()
   val is = udt.getInputStream()
+  
+//  def getObject(objType:ByteableFactory):Byteable = {
+//    Client.writeString(req.toString,os)
+//    val response = Client.expect(is,ack).asInstanceOf[ack]
+//    val nBytes = response.msg.toLong
+//    Client.writeString(ack(response.msg).toString(),os)
+//    val bos = new ByteArrayOutputStream()
+//    Client.copy(is,bos,nBytes)
+//    FileTree.fromByteArray(bos.toByteArray())
+//  }
+  
+  def getShares(req:ftReq):ShareContainer = {
+    Client.writeString(req.toString(),os)
+    Client.expectObj[ShareContainer](is)
+  }
   
   def getFile(req:getReq,dest:String):Long = {
     Client.writeString(req.toString(),os)
@@ -222,6 +299,10 @@ class Server(localPort:Int,remoteHost:String,remotePort:Int) {
         throw new Exception("Unknown error")
       }
     }
+  }
+  
+  def sendShares(s:ShareContainer) = {
+    Client.writeBytes(s.toByteArray(),os)
   }
   
   def sendFile(req:getReq) = {

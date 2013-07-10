@@ -6,10 +6,10 @@ import java.io.IOException
 /**
  * Listens for local directory changes. Not recursive.
  */
-class LocalListener(path:String) {
+class LocalListener() {
   val watchService = FileSystems.getDefault().newWatchService();
   var watched = null.asInstanceOf[WatchKey]
-  registerWatchedPath(path)
+  //registerWatchedPath(path)
   
   
   @throws(classOf[IOException])

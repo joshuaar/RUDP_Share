@@ -6,7 +6,7 @@ class FileTreeCreate extends FunSuite {
     expect(3) { 
       val x = new File("src/test/scala/dirs/dir1")
       val y = new FileTree(x)
-      y.getChildren().length
+      y.getChildren().values.toList.length
       //new java.io.File(".").getCanonicalPath()
     }
   }
@@ -14,7 +14,7 @@ class FileTreeCreate extends FunSuite {
     expect(8) { 
       val x = new File("src/test/scala/dirs/dir1_del")
       val y = new FileTree(x)
-      y.getAll().length
+      y.getAll()
       //new java.io.File(".").getCanonicalPath()
     }
   }
@@ -25,13 +25,22 @@ class FileTreeSerialize extends FunSuite {
     expect(true) {
        val a = new FileTree(new File("src/test/scala/dirs/dir1"))
        val b = a.toByteArray()
-       val c = FileTree.fromByteArray(b)
+       val c = ByteableFactory.fromByteArray[FileTree](b)
        a.toJSON().equals(c.toJSON())
     }
   }
 }
 
 class DiffTest extends FunSuite {
+  val ref = new FileTree(new File("src/test/scala/dirs"))
+  test("Test Get Subtree"){
+    expect("dir1file1file2dir2"){
+      ref.getSubtree(List("dir1_del","dir1")) match {
+        case Some(tree) => tree.getNode().getName+tree.listChildNames().reduce((x:String,y:String)=>x+y)
+        case None => false
+      }
+    }
+  }
   test("Test RMLOCAL"){
     expect(true){
     val a = new FileTree(new File("src/test/scala/dirs/dir1"))

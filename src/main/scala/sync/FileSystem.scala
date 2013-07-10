@@ -3,11 +3,35 @@ package share.sync
 import scala.util.parsing.json._
 import java.io._
 
-trait Types {
+object Types {
   type Sort = (String, Long)
-  type Children = Array[FileTree]
+  type Children = Map[String,FileTree]
   type JSONNode = Map[String,List[Any]]
-  implicit def arrayToList[A](a: Array[A]) = a.toList
+  
+  
+}
+
+trait Byteable {
+  def toByteArray():Array[Byte]
+}
+
+object ByteableFactory {
+  def fromByteArray[X<:Byteable](a:Array[Byte]):X = {
+    val bis = new ByteArrayInputStream(a)
+    val in = new ObjectInputStream(bis)
+    val output = in.readObject()
+    return output.asInstanceOf[X]
+  }
+  
+  def toByteArray(obj:Byteable):Array[Byte] = {
+    val bos = new ByteArrayOutputStream()
+    val out = new ObjectOutputStream(bos)
+    out.writeObject(obj)
+    out.close()
+    val output = bos.toByteArray()
+    bos.close()
+    output
+  }
 }
 
 case class fileObj(isDirectory:Boolean,getName:String,length:Long) {
@@ -16,33 +40,109 @@ case class fileObj(isDirectory:Boolean,getName:String,length:Long) {
   }
 }
 
-object FileTree {
-  def fromByteArray(a:Array[Byte]):FileTree = {
-    val bis = new ByteArrayInputStream(a)
-    val in = new ObjectInputStream(bis)
-    val output = in.readObject()
-    return output.asInstanceOf[FileTree]
+case class SubtreeException(msg:String) extends Exception
+
+@serializable
+class Share(ft:FileTree,nm:String) extends Byteable{
+  val files = ft
+  val name = nm
+  def getRootDir():String = {
+    return files.getNode().getName
+  }
+  def toByteArray():Array[Byte] = {
+    ByteableFactory.toByteArray(this)
   }
 }
+
+@serializable
+class Sync(ft:FileTree,nm:String) extends Share(ft,nm) {
+  
+}
+
+@serializable
+class ShareContainer extends Byteable {
+  var shares = Map[String,Share]()
+  
+  def toByteArray():Array[Byte] = {
+    ByteableFactory.toByteArray(this)
+  }
+  
+  def add(res:Share) = {
+    shares += (res.name -> res)
+  }
+  def remove(res:Share) = {
+    shares -= res.name
+  }
+  def remove(res:String) = {
+    shares -= res
+  }
+  def getAll():List[Share] = {
+    shares.values.toList
+  }
+}
+
 
 /**
  * Builds an abstract file tree from a root directory
  */
 @serializable
-class FileTree(f: File) extends Types{
+class FileTree(f: File, parent:Option[FileTree] = None) extends Byteable{
+  implicit def arrayToList[A](a: Array[A]) = a.toList
   val test = "hello"
   private var root = makeRoot(f)
-  private var children = Array[FileTree]()
+  private var children = Map[String,FileTree]()
   if(f.isDirectory())
     children = buildTree()
-  def buildTree(): Children = {
-    val children = f.listFiles().map((x: File) => new FileTree(x))
+  def buildTree(): Types.Children = {
+    val children = f.listFiles().map((x: File) => new FileTree(x,Some(this))).map((x:FileTree)=>(x.getNode().getName,x)).toMap
     return children
+  }
+  
+  /**
+   * Takes paths of the form ["rootDir","nextDir","lastDir","FileOrDir"]
+   */
+  def getSubtree(relPath:List[String]):Option[FileTree] = {
+    val thisDir = relPath.head
+    val tailDirs = relPath.tail
+    if(tailDirs.length == 0){//we're at the end of the path
+      val expected = getNode().getName
+      if(thisDir.equals(expected))//and the root of current subtree == the resource we want
+        return Some(this)
+      throw new SubtreeException(s"Expected $expected, got $thisDir")//else we have a problem
+    }
+    val nextCandidates = children
+    val nextNode = children.get(tailDirs(0)) match {
+      case Some(ft) => {
+        return ft.getSubtree(tailDirs)
+      }
+      case None => return None
+    }
+    return None
+  }
+  
+  def removeSubtree(relPath:List[String]) = {
+    getSubtree(relPath) match {
+      case Some(tree) => tree.getParent() match {
+        case Some(parentTree) => {
+          parentTree.rmChild(tree.getNodeName())
+        }
+        case None => throw new SubtreeException("Cannot remove the root of a tree")
+      }
+      case None => throw new SubtreeException("Subtree does not exist, cannot remove")
+    }
+  }
+  
+  def getParent():Option[FileTree] = {
+    return parent
+  }
+  
+  def rmChild(childName:String) = {
+    children -= childName
   }
   
   def toJSON():String = {
     val rootJSON = root.toJSON()
-    val childrenJSONChunks = children.map((x:FileTree) => x.toJSON())
+    val childrenJSONChunks = children.map{case (k:String,x:FileTree) => x.toJSON()}.toList
     var childrenJSON = ""
     if(childrenJSONChunks.length == 0){}
     else if(childrenJSONChunks.length == 1){
@@ -69,32 +169,35 @@ class FileTree(f: File) extends Types{
   }
   
   def listChildNames(): Array[String] = {
-    return children.map(_.root.getName)
+    return children.map{case (k:String,x:FileTree) => x.getNode().getName}.toArray
   }
-  def getChildren(): Children = {
+  def getChildren(): Types.Children = {
     return children
   }
-  def getChildDirs(): Children = {
-    return children.filter(_.root.isDirectory)
+  def getChildDirs(): Types.Children = {
+    return children.filter{case (k:String,x:FileTree)=>x.getNode().isDirectory}
   }
   def getChildDirNames(): Array[String] = {
-    return getChildren.map(_.root.getName)
+    return getChildren.map{case (s:String,x:FileTree)=>x.getNode().getName}.toArray
   }
-  def getSort():Sort = {
+  def getSort():Types.Sort = {
     return (root.getName, root.length)
   }
   def getNode():fileObj = {
     return root
   }
+  def getNodeName():String = {
+    return root.getName
+  }
   def getAll():List[fileObj] = {
     var x = root
     val ch = children
-    root :: ch.flatMap(_.getAll())
+    root :: ch.flatMap{case (s:String,x:FileTree)=>x.getAll()}.toList
   }
 }
 
-object funcs extends Types {
-  
+object funcs {
+  //implicit def map2List(m:Map[String,FileTree]):List[FileTree]
   /**
    * Actions generated to fix out of sync files
    */
@@ -109,8 +212,8 @@ object funcs extends Types {
   /**
    * These functions check if resources are synced or not by testing equality
    */
-  def isSynced(a:Option[Sort],b:Option[Sort]):Boolean = return a==b
-  def isSynced(a:Option[Sort],b:Sort):Boolean = a==b
+  def isSynced(a:Option[Types.Sort],b:Option[Types.Sort]):Boolean = return a==b
+  def isSynced(a:Option[Types.Sort],b:Types.Sort):Boolean = a==b
   
    /**
    * Detects differences between this file tree and another.
@@ -187,17 +290,19 @@ object funcs extends Types {
     val thisChildren = thisTree map (_.getChildren())
     val otherChildren = otherTree map (_.getChildren())
     val refChildren = refTree map (_.getChildren())
-    
+    def mapSorts(c:Types.Children):Array[String] = {
+      return c.map{case (k:String,x:FileTree) => x.getSort()._1}.toArray
+    }
     val a = thisChildren match{
-      case Some(trees) => trees.map(_.getSort()._1)
+      case Some(trees) => mapSorts(trees)
       case None => Array[String]()
     }
     val b = otherChildren match{
-      case Some(tree) => tree.map(_.getSort()._1)
+      case Some(tree) => mapSorts(tree)
       case None => Array[String]()
     }
     val r = refChildren match{
-      case Some(tree) => tree.map(_.getSort()._1)
+      case Some(tree) => mapSorts(tree)
       case None => Array[String]()
     }
     // a,b, and r are the sorts for this, other and ref respectively
@@ -205,16 +310,16 @@ object funcs extends Types {
     val all = (b ++ a ++ r).toSet
     
     //Gets child matching a particular sort's !name!
-    def getChild(s:String, lib:Option[Children]):Option[FileTree] = {
+    def getChild(s:String, lib:Option[Types.Children]):Option[FileTree] = {
       if(lib.isEmpty)
         return Option.empty[FileTree]
-      val out = lib.get.filter(_.getSort()._1 == s) // Get the fileTrees that have the same sort as the query 
+      val out = lib.get.filter{case (k:String,x:FileTree)=>x.getSort()._1 == s}.toList // Get the fileTrees that have the same sort as the query 
       
       if(out.length == 0)
         return Option.empty[FileTree]
       
       if(out.length == 1)
-        return Option(out(0))
+        return Option(out(0)._2)
         
       throw new Exception("Fatal, Multiple files with same name in "+out.toString())
     }
@@ -243,7 +348,7 @@ object run extends App{
   val b = a.toJSON()
   println(b)
   val c = a.toByteArray
-  val d = FileTree.fromByteArray(c)
+  val d = ByteableFactory.fromByteArray[FileTree](c)
   println(d.toJSON)
    // val f = getDiff("/home/josh/Downloads","src/test/scala/dirs/dir1","src/test/scala/dirs/dir1/dir1_del/dir1")
    // println("Printing Missing")

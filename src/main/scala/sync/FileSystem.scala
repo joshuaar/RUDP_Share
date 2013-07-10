@@ -43,11 +43,11 @@ case class fileObj(isDirectory:Boolean,getName:String,length:Long) {
 case class SubtreeException(msg:String) extends Exception
 
 @serializable
-class Share(ft:FileTree,nm:String) extends Byteable{
+class Share(ft:FileTree,nm:String,root:String) extends Byteable{
   val files = ft
   val name = nm
   def getRootDir():String = {
-    return files.getNode().getName
+    return root
   }
   def toByteArray():Array[Byte] = {
     ByteableFactory.toByteArray(this)
@@ -55,7 +55,7 @@ class Share(ft:FileTree,nm:String) extends Byteable{
 }
 
 @serializable
-class Sync(ft:FileTree,nm:String) extends Share(ft,nm) {
+class Sync(ft:FileTree,nm:String,root:String) extends Share(ft,nm,root) {
   
 }
 
@@ -94,8 +94,20 @@ class FileTree(f: File, parent:Option[FileTree] = None) extends Byteable{
   if(f.isDirectory())
     children = buildTree()
   def buildTree(): Types.Children = {
-    val children = f.listFiles().map((x: File) => new FileTree(x,Some(this))).map((x:FileTree)=>(x.getNode().getName,x)).toMap
-    return children
+    //println("Listing Canonical Path")
+    //println(f.getCanonicalPath())
+    try{
+    	val children = f.listFiles()
+    	val out = children.map((x: File) => new FileTree(x,Some(this))).map((x:FileTree)=>(x.getNode().getName,x)).toMap
+    	return out
+    }
+    catch {
+      case e:NullPointerException => {
+        println("Caught invalid directory")
+        removeSubtree(getNodeName()::Nil)
+        return Map[String,FileTree]()
+      }
+    }
   }
   
   /**
@@ -189,6 +201,28 @@ class FileTree(f: File, parent:Option[FileTree] = None) extends Byteable{
   def getNodeName():String = {
     return root.getName
   }
+  
+  def ApplyToAllPaths(root:String,f:(String)=>Any):Unit = {
+    val sep = File.separator
+    f(root)
+    children.values.map{(x:FileTree) => {
+      val nextRoot = root+sep+x.getNodeName()
+      x.ApplyToAllPaths(nextRoot, f)
+      }
+    }
+  }
+  
+  def ApplyToAllDirs(root:String,f:(String)=>Any):Unit = {
+    val sep = File.separator
+    if(getNode().isDirectory)
+      f(root)
+    children.values.map{(x:FileTree) => {
+      val nextRoot = root+sep+x.getNodeName()
+      x.ApplyToAllDirs(nextRoot, f)
+      }
+    }
+  }
+  
   def getAll():List[fileObj] = {
     var x = root
     val ch = children
@@ -335,7 +369,7 @@ object funcs {
   }
 }
 
-object run extends App{
+object run {//extends App{
   def getDiff(x:String,y:String,z:String):List[funcs.Action] = {
     val a = new FileTree(new File(x))
     val b = new FileTree(new File(y))

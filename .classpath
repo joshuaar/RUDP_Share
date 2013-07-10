@@ -18,5 +18,6 @@
 	<classpathentry kind="lib" path="/home/josh/RUDP_Share/lib/json-smart-1.1.1.jar"/>
 	<classpathentry kind="lib" path="/home/josh/UDPChat/target/scala-2.10/UDPChat-assembly-0.1.jar"/>
 	<classpathentry kind="lib" path="/home/josh/projects/RUDP_Share/lib/udt-java-0.5-SNAPSHOT.jar"/>
+	<classpathentry kind="lib" path="/home/josh/projects/RUDP_Share/lib/jpathwatch-0-95.jar"/>
 	<classpathentry kind="output" path="bin"/>
 </classpath>

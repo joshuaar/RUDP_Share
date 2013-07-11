@@ -8,28 +8,17 @@ import akka.util.Timeout
 import scala.concurrent.duration._
 import name.pachler.nio.file._
 
-
-//class LocalListener() {
-//  
-//}
-//  @throws(classOf[IOException])
-//  @throws(classOf[UnsupportedOperationException])
-//  def registerWatchedPath(path:String)={
-//
-//  def getNextChange():List[WatchEvent[_]]={
-//
-
 abstract class ShareManMsg
 case class mkShare(root:String,name:String) extends ShareManMsg {
   def mk():Share = {
-    val ft = new FileTree(new File(root))
+    val ft = FileTree.fromFile(new File(root))
     return new Share(ft,name,root)
   }
 }
 
 case class mkSync(root:String,name:String) extends ShareManMsg {
   def mk():Sync = {
-    val ft = new FileTree(new File(root))
+    val ft = FileTree.fromFile(new File(root))
     return new Sync(ft,name,root)
   }
 }
@@ -92,7 +81,7 @@ class ShareMan(protocol:String) extends Actor {
 
 object shareManTest extends App {
   println("Creating test share")
-  new FileTree(new File("/home/josh/Downloads"))
+  FileTree.fromFile(new File("/home/josh/Downloads"))
   val system = ActorSystem("ShareMan")
   val shares = system.actorOf(Props(new ShareMan("myProtocol")), name = "shareManTest")
   shares ! mkShare("/home/josh/Downloads","homeShare")

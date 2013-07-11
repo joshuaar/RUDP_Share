@@ -3,6 +3,16 @@ package share.sync
 import scala.util.parsing.json._
 import java.io._
 
+import java.nio.file.DirectoryStream;
+import java.nio.file.Files;
+import java.nio.file.FileSystems;
+import java.nio.file.Path;
+import java.nio.file.FileVisitor
+
+import share.protocol.http.JSONException
+
+import java.nio.file.FileVisitResult._
+
 object Types {
   type Sort = (String, Long)
   type Children = Map[String,FileTree]
@@ -33,7 +43,11 @@ object ByteableFactory {
     output
   }
 }
-
+object fileObj {
+  def fromList(l:List[Any]):fileObj = {
+    return fileObj(l(0).asInstanceOf[Boolean],l(1).asInstanceOf[String],l(2).asInstanceOf[Double].toLong)
+  }
+}
 case class fileObj(isDirectory:Boolean,getName:String,length:Long) {
   def toJSON():String = {
     s""""m":[$isDirectory,"$getName",$length]"""
@@ -81,24 +95,86 @@ class ShareContainer extends Byteable {
   }
 }
 
-
+object FileTree {
+  def fromString(f:String):FileTree = {
+    val path = FileSystems.getDefault().getPath(f)
+    FileTree.fromPath(path)
+  }
+  def fromFile(f:File):FileTree = {
+    FileTree.fromString(f.getAbsolutePath())
+  }
+  def fromPath($f: Path, parent:Option[FileTree] = None):FileTree = {
+    val x = new FileTree()
+    x.build($f,parent)
+    x
+  }
+  def fromRecursiveMap(f: Map[String,List[Any]],parent:Option[FileTree] = None):FileTree = {
+    val x = new FileTree()
+    x.build(f,parent)
+    x
+  }
+  def fromJSON(f:String):FileTree = {
+    val x = new FileTree()
+    x.build(f)
+    x
+  }
+}
 /**
  * Builds an abstract file tree from a root directory
  */
 @serializable
-class FileTree(f: File, parent:Option[FileTree] = None) extends Byteable{
+class FileTree() extends Byteable{
   implicit def arrayToList[A](a: Array[A]) = a.toList
-  val test = "hello"
-  private var root = makeRoot(f)
+  private var root = fileObj(false,"",0)
   private var children = Map[String,FileTree]()
-  if(f.isDirectory())
-    children = buildTree()
-  def buildTree(): Types.Children = {
-    //println("Listing Canonical Path")
-    //println(f.getCanonicalPath())
+  private var parent:Option[FileTree] = None
+  
+  def build($f: Path, par:Option[FileTree] = None):Unit = {
+    parent = par
+    root = makeRoot($f)
+    if(Files.isDirectory($f))
+    	children = buildChildren($f)
+  }
+  
+  def build(json:String):Unit = {
+    val jsparsed = JSON.parseFull(json) match {
+      case Some(parsed) => {
+        parsed.asInstanceOf[Map[String,List[Any]]]
+        
+      }
+      case None => {
+        throw new JSONException("Error while parsing FileTree JSON")
+      }
+    }
+    build(jsparsed,None)
+  }
+  
+  def build(parsedJSON:Map[String,List[Any]],parent:Option[FileTree]):Unit = {
+    root = fileObj.fromList(parsedJSON.get("m").get.asInstanceOf[List[Any]])
+    children = buildChildren(parsedJSON.get("c").get)    
+  }
+  
+  def buildChildren(jsonChildren:List[Any]):Types.Children = {
+    val children = jsonChildren.asInstanceOf[List[Map[String,List[Any]]]]
+    val out = children.map((x: Map[String,List[Any]]) => FileTree.fromRecursiveMap(x,Some(this))).map((x:FileTree)=>(x.getNode().getName,x)).toMap
+    out
+  }
+  
+  def buildChildren($f:Path): Types.Children = {
     try{
-    	val children = f.listFiles()
-    	val out = children.map((x: File) => new FileTree(x,Some(this))).map((x:FileTree)=>(x.getNode().getName,x)).toMap
+    	val dstream = Files.newDirectoryStream($f)
+    	val childreniter = dstream.iterator()
+    	var children = List[Path]()
+    	while(childreniter.hasNext()){
+    	  val nxt = childreniter.next()
+    	  //println(nxt)
+    	  children = nxt::children
+    	}
+    	dstream.close()
+    	//def mkChild(x:Path) ={} 
+    	//val mkChild = (x: Path) => new FileTree(x,Some(this))).map((x:FileTree)=>(x.getNode().getName,x)
+    	
+    	val out = children.map((x: Path) => FileTree.fromPath(x,Some(this))).map((x:FileTree)=>(x.getNode().getName,x)).toMap
     	return out
     }
     catch {
@@ -109,6 +185,7 @@ class FileTree(f: File, parent:Option[FileTree] = None) extends Byteable{
       }
     }
   }
+  
   
   /**
    * Takes paths of the form ["rootDir","nextDir","lastDir","FileOrDir"]
@@ -176,8 +253,8 @@ class FileTree(f: File, parent:Option[FileTree] = None) extends Byteable{
     output
   }
   
-  def makeRoot(f:File):fileObj = {
-    return fileObj(f.isDirectory(),f.getName(),f.length())
+  def makeRoot(f:Path):fileObj = {
+    return fileObj(Files.isDirectory(f),f.getFileName().toString,Files.size(f))
   }
   
   def listChildNames(): Array[String] = {
@@ -369,21 +446,24 @@ object funcs {
   }
 }
 
-object run {//extends App{
+object run extends App{
   def getDiff(x:String,y:String,z:String):List[funcs.Action] = {
-    val a = new FileTree(new File(x))
-    val b = new FileTree(new File(y))
-    val r = new FileTree(new File(z))
+    val a = FileTree.fromString(x)
+    val b = FileTree.fromString(x)
+    val r = FileTree.fromString(x)
     val f = funcs.diff(Option(a),Option(b),Option(r))
     return f
   }
-  
-  val a = new FileTree(new File("src/test/scala/dirs/dir1"))
+  println("Making Filetree")
+  val a = FileTree.fromString("/home/josh/CIM/Research/labdata/jaricher")
+  println("Finished making filetree")
   val b = a.toJSON()
-  println(b)
-  val c = a.toByteArray
-  val d = ByteableFactory.fromByteArray[FileTree](c)
-  println(d.toJSON)
+  println(b.length)
+  val c = FileTree.fromJSON(b)
+  //val c = a.toByteArray
+  //println(c.length)
+  //val d = ByteableFactory.fromByteArray[FileTree](c)
+  //println(d.toJSON)
    // val f = getDiff("/home/josh/Downloads","src/test/scala/dirs/dir1","src/test/scala/dirs/dir1/dir1_del/dir1")
    // println("Printing Missing")
    // println(f.mkString("\n"))

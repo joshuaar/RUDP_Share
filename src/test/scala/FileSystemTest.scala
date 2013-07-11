@@ -5,7 +5,7 @@ class FileTreeCreate extends FunSuite {
   test("Test Make FileTree") {
     expect(3) { 
       val x = new File("src/test/scala/dirs/dir1")
-      val y = new FileTree(x)
+      val y = FileTree.fromFile(x)
       y.getChildren().values.toList.length
       //new java.io.File(".").getCanonicalPath()
     }
@@ -13,7 +13,7 @@ class FileTreeCreate extends FunSuite {
   test("Test Get All Files") {
     expect(8) { 
       val x = new File("src/test/scala/dirs/dir1_del")
-      val y = new FileTree(x)
+      val y = FileTree.fromFile(x)
       y.getAll()
       //new java.io.File(".").getCanonicalPath()
     }
@@ -21,31 +21,31 @@ class FileTreeCreate extends FunSuite {
 }
 
 class FileTreeSerialize extends FunSuite {
-  test("Test JSON Formatting and Serialization") {
+  test("Test JSON Serialization") {
     expect(true) {
-       val a = new FileTree(new File("src/test/scala/dirs/dir1"))
-       val b = a.toByteArray()
-       val c = ByteableFactory.fromByteArray[FileTree](b)
+       val a = FileTree.fromFile(new File("src/test/scala/dirs/dir1"))
+       val b = a.toJSON
+       val c = FileTree.fromJSON(b)
        a.toJSON().equals(c.toJSON())
     }
   }
 }
 
 class DiffTest extends FunSuite {
-  val ref = new FileTree(new File("src/test/scala/dirs"))
+  val ref = FileTree.fromFile(new File("src/test/scala/dirs"))
   test("Test Get Subtree"){
-    expect("dir1file1file2dir2"){
+    expect(Set("dir1","file1","file2","dir2")){
       ref.getSubtree(List("dir1_del","dir1")) match {
-        case Some(tree) => tree.getNode().getName+tree.listChildNames().reduce((x:String,y:String)=>x+y)
+        case Some(tree) => tree.listChildNames().toSet+tree.getNode().getName
         case None => false
       }
     }
   }
   test("Test RMLOCAL"){
     expect(true){
-    val a = new FileTree(new File("src/test/scala/dirs/dir1"))
+    val a = FileTree.fromFile(new File("src/test/scala/dirs/dir1"))
     val r = a
-    val b = new FileTree(new File("src/test/scala/dirs/dir1_del/dir1"))
+    val b = FileTree.fromFile(new File("src/test/scala/dirs/dir1_del/dir1"))
     val f = funcs.diff(Option(a),Option(b),Option(a))
       var ret = false
       if(f.length == 1){
@@ -59,9 +59,9 @@ class DiffTest extends FunSuite {
     }
   }
   def getDiff(x:String,y:String,z:String):List[funcs.Action] = {
-    val a = new FileTree(new File(x))
-    val b = new FileTree(new File(y))
-    val r = new FileTree(new File(z))
+    val a = FileTree.fromFile(new File(x))
+    val b = FileTree.fromFile(new File(y))
+    val r = FileTree.fromFile(new File(z))
     val f = funcs.diff(Option(a),Option(b),Option(r))
     return f
   }
@@ -81,7 +81,7 @@ class DiffTest extends FunSuite {
   }
   test("Test GET"){
     expect(true){
-      val f = getDiff("src/test/scala/dirs/dir1_del/dir1","src/test/scala/dirs/dir1","src/test/scala/dirs/dir1/dir1_del/dir1")
+      val f = getDiff("src/test/scala/dirs/dir1_del/dir1","src/test/scala/dirs/dir1","src/test/scala/dirs/dir1_del/dir1")
       var ret = false
       if(f.length == 1){
        // println(f(0))

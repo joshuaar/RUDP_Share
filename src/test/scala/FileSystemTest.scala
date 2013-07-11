@@ -5,7 +5,7 @@ class FileTreeCreate extends FunSuite {
   test("Test Make FileTree") {
     expect(3) { 
       val x = new File("src/test/scala/dirs/dir1")
-      val y = FileTree.fromFile(x)
+      val y = FileTree.fromFile(x,None)
       y.getChildren().values.toList.length
       //new java.io.File(".").getCanonicalPath()
     }
@@ -13,26 +13,42 @@ class FileTreeCreate extends FunSuite {
   test("Test Get All Files") {
     expect(8) { 
       val x = new File("src/test/scala/dirs/dir1_del")
-      val y = FileTree.fromFile(x)
+      val y = FileTree.fromFile(x,None)
       y.getAll()
       //new java.io.File(".").getCanonicalPath()
     }
   }
 }
 
-class FileTreeSerialize extends FunSuite {
-  test("Test JSON Serialization") {
+class FileTreeObjectsSerialize extends FunSuite {
+  val a = FileTree.fromString("src/test/scala/dirs/dir1")
+  test("Test Filetree to JSON") {
     expect(true) {
-       val a = FileTree.fromFile(new File("src/test/scala/dirs/dir1"))
        val b = a.toJSON
        val c = FileTree.fromJSON(b)
        a.toJSON().equals(c.toJSON())
     }
   }
+  val b = new Share(a,"test","test","test")
+  test("Test Share to JSONish"){
+    expect(true) {
+    val c = b.toString()
+    val d = Share.fromString(c)
+    d.toString.equals(b.toString)
+    }
+  }
+  test("Test Share Collection to JSONish"){
+    expect(true) {
+      val c = new ShareContainer()
+      c.add(b)
+      val d = c.toString()
+      ShareContainer.fromString(d).toString == d
+    }
+  }
 }
 
 class DiffTest extends FunSuite {
-  val ref = FileTree.fromFile(new File("src/test/scala/dirs"))
+  val ref = FileTree.fromString("src/test/scala/dirs")
   test("Test Get Subtree"){
     expect(Set("dir1","file1","file2","dir2")){
       ref.getSubtree(List("dir1_del","dir1")) match {
@@ -43,9 +59,9 @@ class DiffTest extends FunSuite {
   }
   test("Test RMLOCAL"){
     expect(true){
-    val a = FileTree.fromFile(new File("src/test/scala/dirs/dir1"))
+    val a = FileTree.fromString("src/test/scala/dirs/dir1")
     val r = a
-    val b = FileTree.fromFile(new File("src/test/scala/dirs/dir1_del/dir1"))
+    val b = FileTree.fromString("src/test/scala/dirs/dir1_del/dir1")
     val f = funcs.diff(Option(a),Option(b),Option(a))
       var ret = false
       if(f.length == 1){
@@ -59,9 +75,9 @@ class DiffTest extends FunSuite {
     }
   }
   def getDiff(x:String,y:String,z:String):List[funcs.Action] = {
-    val a = FileTree.fromFile(new File(x))
-    val b = FileTree.fromFile(new File(y))
-    val r = FileTree.fromFile(new File(z))
+    val a = FileTree.fromString(x)
+    val b = FileTree.fromString(y)
+    val r = FileTree.fromString(z)
     val f = funcs.diff(Option(a),Option(b),Option(r))
     return f
   }

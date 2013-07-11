@@ -3,11 +3,7 @@ package share.sync
 import scala.util.parsing.json._
 import java.io._
 
-import java.nio.file.DirectoryStream;
-import java.nio.file.Files;
-import java.nio.file.FileSystems;
-import java.nio.file.Path;
-import java.nio.file.FileVisitor
+import java.nio.file._
 
 import share.protocol.http.JSONException
 
@@ -30,6 +26,13 @@ trait Byteable {
 }
 
 object ByteableFactory {
+  def fromByteArray[X<:Byteable](a:Array[Byte]):X = {
+    val bis = new ByteArrayInputStream(a)
+    val in = new ObjectInputStream(bis)
+    val output = in.readObject()
+    return output.asInstanceOf[X]
+  }
+  
   def toByteArray(obj:Byteable):Array[Byte] = {
     val bos = new ByteArrayOutputStream()
     val out = new ObjectOutputStream(bos)
@@ -39,11 +42,6 @@ object ByteableFactory {
     bos.close()
     output
   }
-}
-
-trait ByteableFactory {
-  def fromByteArray():Byteable
-  
 }
 object fileObj {
   def fromList(l:List[Any]):fileObj = {
@@ -88,7 +86,7 @@ class Share(ft:FileTree,nm:String,root:String,kind:String="Share") extends Reque
   def getKind:String = {
     kind
   }
-  def toString():String = {
+  override def toString():String = {
     val fl = getFileTree().toJSON()
     return s"""ShArE:$nm"$root"$kind"$fl"""
   }
@@ -135,7 +133,7 @@ class ShareContainer extends Request {
     shares.values.toList
   }
   
-  def toString():String = {
+  override def toString():String = {
     var shareStrings = ""
     val shareTxt = shares.values.map((x:Share)=>x.toString()).toList
     var shareJSON = shareTxt mkString ","
@@ -150,7 +148,7 @@ object FileTree {
     val path = FileSystems.getDefault().getPath(f)
     FileTree.fromPath(path)
   }
-  def fromFile(f:File):FileTree = {
+  def fromFile(f:File,parent:Option[FileTree]):FileTree = {
     FileTree.fromString(f.getAbsolutePath())
   }
   def fromPath($f: Path, parent:Option[FileTree] = None):FileTree = {
@@ -179,10 +177,28 @@ class FileTree() extends Byteable{
   private var children = Map[String,FileTree]()
   private var parent:Option[FileTree] = None
   
+  def build($f: File, par:Option[FileTree]):Unit = {
+    parent = par
+    val isDir = $f.isDirectory()
+    root = makeRoot($f,isDir)
+    if(isDir)
+    	children = buildChildren($f)
+  }
+  
   def build($f: Path, par:Option[FileTree] = None):Unit = {
     parent = par
-    root = makeRoot($f)
-    if(Files.isDirectory($f))
+    val isDir = try{
+    	val isDir = Files.isDirectory($f)
+    	root = makeRoot($f,isDir)
+    	isDir
+    }
+    catch {
+      case e: NoSuchFileException =>{
+        removeSubtree(getNodeName()::Nil)
+        return
+      }
+    }
+    if(isDir)
     	children = buildChildren($f)
   }
   
@@ -209,7 +225,22 @@ class FileTree() extends Byteable{
     val out = children.map((x: Map[String,List[Any]]) => FileTree.fromRecursiveMap(x,Some(this))).map((x:FileTree)=>(x.getNode().getName,x)).toMap
     out
   }
-  
+  def buildChildren($f:File): Types.Children = {
+    //println("Listing Canonical Path")
+    //println(f.getCanonicalPath())
+    try{
+     val children = $f.listFiles()
+     val out = children.map((x: File) => FileTree.fromFile(x,Some(this))).map((x:FileTree)=>(x.getNode().getName,x)).toMap
+     return out
+    }
+    catch {
+      case e:NullPointerException => {
+        println("Caught invalid directory")
+        removeSubtree(getNodeName()::Nil)
+        return Map[String,FileTree]()
+      }
+    }
+  }
   def buildChildren($f:Path): Types.Children = {
     try{
     	val dstream = Files.newDirectoryStream($f)
@@ -302,8 +333,10 @@ class FileTree() extends Byteable{
     bos.close()
     output
   }
-  
-  def makeRoot(f:Path):fileObj = {
+  def makeRoot(f:File,isDir:Boolean):fileObj = {
+    return fileObj(isDir,f.getName(),f.length)
+  }
+  def makeRoot(f:Path,isDir:Boolean):fileObj = {
     return fileObj(Files.isDirectory(f),f.getFileName().toString,Files.size(f))
   }
   

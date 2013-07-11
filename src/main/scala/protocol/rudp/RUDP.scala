@@ -9,6 +9,7 @@ import akka.pattern.ask
 import akka.util.Timeout
 import scala.concurrent.duration._
 import udt._
+import share.sync.ShareMan
 
 case class Con(serv:Server,cli:Client)
 
@@ -49,16 +50,14 @@ object wireCodes {
 * Starts listening on a given port
 */
 class rudpActor(lp:Int) extends Actor{
-  
+  import context._
   implicit def g2g(g:GET) = getReq(g.r,g.offset)
   implicit def s2g(s:SEND) = getReq(s.resource,s.offset)
-  
   val localPort = lp
   val localHost = InetAddress.getLocalHost()
   var listener:ActorRef = null
   var cli:Client = null
   var serv:Server = null
-  import context._
   def receive = {
     
     case l:LISTEN => {
@@ -133,6 +132,8 @@ class rudpActor(lp:Int) extends Actor{
 //Listens for messages and files from remote
 class rudpListener(s:Server) extends Actor{
   import context._
+  //val subscribedActors = List[ActorRef]()//A list of actors that subscribe to requests
+
   def receive = {
     //LISTEN FOR COMMANDS
     //	Program new behaviors here, translate from wire codes to actor instructions
@@ -145,6 +146,12 @@ class rudpListener(s:Server) extends Actor{
           println(s"Received a get request, handling")
           s.sendFile(g)
         }
+        
+        case ft:ftReq => {
+          println("Received an ftRequest, handling")
+          s.sendShares(ShareMan.getShares())
+        }
+        
         case a:any => {
           val matcher = "GeT:(.*):(.*)".r
           a.msg match {
@@ -195,7 +202,7 @@ object rudpApp{// extends App {
     //Thread.sleep(500)
     //serv ! ECHO("ECHOTEST!!")
   //}
-  
+
   val serv = api.makeServer("serv",41843,"localhost",46170)
   val cli = api.makeClient("cli",46170,"localhost",41843)
   Thread.sleep(3000)

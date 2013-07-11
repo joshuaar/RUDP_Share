@@ -262,7 +262,7 @@ class Client(localPort:Int, remoteHost:String,remotePort:Int) {
   
   def getShares(req:ftReq):ShareContainer = {
     Client.writeString(req.toString(),os)
-    Client.expectObj[ShareContainer](is)
+    Client.expect(is,ShareContainer).asInstanceOf[ShareContainer]
   }
   
   def getFile(req:getReq,dest:String):Long = {
@@ -302,7 +302,7 @@ class Server(localPort:Int,remoteHost:String,remotePort:Int) {
   }
   
   def sendShares(s:ShareContainer) = {
-    Client.writeBytes(s.toByteArray(),os)
+    Client.writeString(s.toString(),os)
   }
   
   def sendFile(req:getReq) = {

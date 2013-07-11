@@ -13,6 +13,10 @@ import share.protocol.http.JSONException
 
 import java.nio.file.FileVisitResult._
 
+import share.protocol.rudp.Request
+import share.protocol.rudp.reqFactory
+import share.protocol.rudp.ParseException
+
 object Types {
   type Sort = (String, Long)
   type Children = Map[String,FileTree]
@@ -26,13 +30,6 @@ trait Byteable {
 }
 
 object ByteableFactory {
-  def fromByteArray[X<:Byteable](a:Array[Byte]):X = {
-    val bis = new ByteArrayInputStream(a)
-    val in = new ObjectInputStream(bis)
-    val output = in.readObject()
-    return output.asInstanceOf[X]
-  }
-  
   def toByteArray(obj:Byteable):Array[Byte] = {
     val bos = new ByteArrayOutputStream()
     val out = new ObjectOutputStream(bos)
@@ -42,6 +39,11 @@ object ByteableFactory {
     bos.close()
     output
   }
+}
+
+trait ByteableFactory {
+  def fromByteArray():Byteable
+  
 }
 object fileObj {
   def fromList(l:List[Any]):fileObj = {
@@ -56,42 +58,90 @@ case class fileObj(isDirectory:Boolean,getName:String,length:Long) {
 
 case class SubtreeException(msg:String) extends Exception
 
-@serializable
-class Share(ft:FileTree,nm:String,root:String) extends Byteable{
-  val files = ft
-  val name = nm
-  def getRootDir():String = {
-    return root
-  }
-  def toByteArray():Array[Byte] = {
-    ByteableFactory.toByteArray(this)
+
+case class any(msg:String) extends Request {
+  override def toString():String = {
+    return msg
   }
 }
 
-@serializable
-class Sync(ft:FileTree,nm:String,root:String) extends Share(ft,nm,root) {
-  
+object Share extends reqFactory {
+  val matcher = """ShArE:(.*?)"(.*?)"(.*?)"(.*)""".r
+  def fromString(req:String):Share = {
+    req match {
+    case matcher(name,root,kind,files) => return new Share(FileTree.fromJSON(files),name,root,kind)
+    case _ => throw new ParseException("Unknown Error")
+    }
+  }
 }
 
-@serializable
-class ShareContainer extends Byteable {
+class Share(ft:FileTree,nm:String,root:String,kind:String="Share") extends Request{
+  def getFileTree():FileTree = {
+    return ft
+  }
+  def getName:String = {
+    return nm
+  }
+  def getRoot:String = {
+    root
+  }
+  def getKind:String = {
+    kind
+  }
+  def toString():String = {
+    val fl = getFileTree().toJSON()
+    return s"""ShArE:$nm"$root"$kind"$fl"""
+  }
+}
+
+object ShareContainer extends reqFactory {
+  val matcher = """ShCoN:(.*?)""".r
+  def fromString(req:String):ShareContainer = {
+    req match {
+    case matcher(json) => {
+      JSON.parseFull(json) match {
+        case Some(parsedJson) =>{
+         val ls= parsedJson.asInstanceOf[List[String]].map((x:String)=>Share.fromString(x.replaceAll("""\\"""","\"")))
+         return ShareContainer.fromList(ls)
+        }
+        case _ => throw new ParseException("Failed to parse share container")
+      }
+    }
+    case _ => throw new ParseException("Unknown Error")
+    }
+  }
+  def fromList(ls:List[Share]):ShareContainer = {
+    val out = new ShareContainer
+    for(i<-ls){
+      out.add(i)
+    }
+    out
+  }
+}
+
+class ShareContainer extends Request {
   var shares = Map[String,Share]()
   
-  def toByteArray():Array[Byte] = {
-    ByteableFactory.toByteArray(this)
-  }
-  
   def add(res:Share) = {
-    shares += (res.name -> res)
+    shares += (res.getName -> res)
   }
   def remove(res:Share) = {
-    shares -= res.name
+    shares -= res.getName
   }
   def remove(res:String) = {
     shares -= res
   }
   def getAll():List[Share] = {
     shares.values.toList
+  }
+  
+  def toString():String = {
+    var shareStrings = ""
+    val shareTxt = shares.values.map((x:Share)=>x.toString()).toList
+    var shareJSON = shareTxt mkString ","
+    shareJSON = shareJSON.replaceAll("\"","""\\"""")//Replace all quotes with escaped quotes
+    shareJSON = s"""["$shareJSON"]"""
+    s"ShCoN:$shareJSON"
   }
 }
 

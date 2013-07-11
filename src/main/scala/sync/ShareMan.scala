@@ -23,17 +23,15 @@ object ShareMan {
   
   def addShare(s:Share) = {
     atomic { implicit txn =>
-      val newShare = getShares()
-      s.getFileTree.ApplyToAllDirs(m.root,(x:String)=>watcher.register(x))
-      newShare.add(s)
+      val oldShare = getShares()
+      val newShare = oldShare.add(s)
       myShares() = Option(newShare)
     }
   }
   def rmShare(s:Share) ={
     atomic {implicit txn =>
-      val newShare = getShares()
-      s.getFileTree.ApplyToAllDirs(s.getRoot, (x:String)=>watcher.rm(x))
-      newShare.remove(s)
+      val oldShare = getShares()
+      val newShare=oldShare.remove(s)
       
       myShares() = Option(newShare)
     }
@@ -65,6 +63,7 @@ class ShareMan(protocol:String) extends Actor {
   self ! new getNext()
   def handleEvent(f:fileEvent){
     println(f)
+    
 //    val x = Shared.getShares()
 //    println(x.getAll.length)
 //    Shared.addShare(new Share(FileTree.fromString("/home/josh/Documents"),"","",""))
@@ -96,6 +95,8 @@ class ShareMan(protocol:String) extends Actor {
     case m:mkShare => { 
       println("creating share")
       val share = m.mk()
+      //Register all directories with watch service
+      share.getFileTree.ApplyToAllDirs(m.root,(x:String)=>watcher.register(x))
       println("adding share to collection")
       ShareMan.addShare(share)
       //watcher.register(m.root)
@@ -107,6 +108,7 @@ class ShareMan(protocol:String) extends Actor {
     }
     
     case rmShare(s:Share) => {
+      s.getFileTree.ApplyToAllDirs(s.getRoot, (x:String)=>watcher.rm(x))
       ShareMan.rmShare(s)
       //watcher.rm(s.getRootDir())
       

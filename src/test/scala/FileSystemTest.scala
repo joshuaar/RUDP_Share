@@ -21,6 +21,7 @@ class FileTreeCreate extends FunSuite {
 }
 
 class FileTreeObjectsSerialize extends FunSuite {
+  val root = "src/test/scala/dirs/dir1"
   val a = FileTree.fromString("src/test/scala/dirs/dir1")
   test("Test Filetree to JSON") {
     expect(true) {
@@ -29,7 +30,7 @@ class FileTreeObjectsSerialize extends FunSuite {
        a.toJSON().equals(c.toJSON())
     }
   }
-  val b = new Share(a,"test","test","test")
+  val b = new Share(a,"test",s"$root","test")
   test("Test Share to JSONish"){
     expect(true) {
     val c = b.toString()
@@ -37,12 +38,20 @@ class FileTreeObjectsSerialize extends FunSuite {
     d.toString.equals(b.toString)
     }
   }
+  var c = new ShareContainer()
   test("Test Share Collection to JSONish"){
+    
     expect(true) {
-      val c = new ShareContainer()
-      c.add(b)
+      c= c.add(b)
       val d = c.toString()
-      ShareContainer.fromString(d).toString == d
+      ShareContainer.fromString(d).toString.equals(d)
+    }
+  }
+  test("Test Share Container root matching"){
+    expect((Some(b),None)){
+    val match1 = c.matchShare(root+"other/stuff/after")
+    val match2 = c.matchShare("NoT []13590 PoSS OIbLY a Directouy")
+    (match1,match2)
     }
   }
 }

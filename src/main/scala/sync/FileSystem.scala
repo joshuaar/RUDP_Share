@@ -109,25 +109,47 @@ object ShareContainer extends reqFactory {
     }
   }
   def fromList(ls:List[Share]):ShareContainer = {
-    val out = new ShareContainer
+    var out = new ShareContainer
     for(i<-ls){
-      out.add(i)
+      out = out.add(i)
     }
     out
   }
+  def fromMap(m:Map[String,Share]):ShareContainer = {
+    new ShareContainer(m)
+  }
 }
 
-class ShareContainer extends Request {
-  var shares = Map[String,Share]()
+class ShareContainer(var shares:Map[String,Share] = Map[String,Share]()) extends Request {
+  //Get longest matching share root string
+  def matchShare(longQuery:String):Option[Share] = {
+    var maxMatch = -1
+    var matching:Option[Share] = None
+    for(i<-shares.values){
+      val root = i.getRoot
+      //println(root)
+      //println(longQuery)
+      val matcher = s"$root(.*)".r
+      longQuery match {
+        case matcher(stuff) => {
+          maxMatch = root.length
+          matching = Some(i)
+        }
+        case _ =>
+      }
+    }
+    matching
+  }
   
-  def add(res:Share) = {
-    shares += (res.getName -> res)
+  implicit def map2ShCont(sh:Map[String,Share]) = (new ShareContainer(sh))
+  def add(res:Share):ShareContainer = {
+    shares + (res.getName -> res)
   }
-  def remove(res:Share) = {
-    shares -= res.getName
+  def remove(res:Share):ShareContainer = {
+    shares - res.getName
   }
-  def remove(res:String) = {
-    shares -= res
+  def remove(res:String):ShareContainer  = {
+    shares - res
   }
   def getAll():List[Share] = {
     shares.values.toList
@@ -166,6 +188,11 @@ object FileTree {
     x.build(f)
     x
   }
+  def fromData(root:fileObj,children:Types.Children,parent:Option[FileTree]):FileTree = {
+    val x = new FileTree()
+    x.build(root,children,parent)
+    x
+  }
 }
 /**
  * Builds an abstract file tree from a root directory
@@ -176,7 +203,11 @@ class FileTree() extends Byteable{
   private var root = fileObj(false,"",0)
   private var children = Map[String,FileTree]()
   private var parent:Option[FileTree] = None
-  
+  def build(rt:fileObj,ch:Types.Children,pt:Option[FileTree]):Unit = {
+    root=rt
+    children=ch
+    parent=pt
+  }
   def build($f: File, par:Option[FileTree]):Unit = {
     parent = par
     val isDir = $f.isDirectory()
@@ -194,7 +225,7 @@ class FileTree() extends Byteable{
     }
     catch {
       case e: NoSuchFileException =>{
-        removeSubtree(getNodeName()::Nil)
+        __removeSubtree(getNodeName()::Nil)
         return
       }
     }
@@ -236,7 +267,7 @@ class FileTree() extends Byteable{
     catch {
       case e:NullPointerException => {
         println("Caught invalid directory")
-        removeSubtree(getNodeName()::Nil)
+        __removeSubtree(getNodeName()::Nil)
         return Map[String,FileTree]()
       }
     }
@@ -261,7 +292,7 @@ class FileTree() extends Byteable{
     catch {
       case e:NullPointerException => {
         println("Caught invalid directory")
-        removeSubtree(getNodeName()::Nil)
+        __removeSubtree(getNodeName()::Nil)
         return Map[String,FileTree]()
       }
     }
@@ -290,7 +321,32 @@ class FileTree() extends Byteable{
     return None
   }
   
-  def removeSubtree(relPath:List[String]) = {
+  def removeSubtree(relPath:List[String]):FileTree = {
+    throw new Exception("Doesnt work, tried to make immutable but no dice@")
+    getSubtree(relPath) match {
+      case Some(tree) => tree.getParent() match {
+        case Some(parentTree) => {
+          val newCh=parentTree.getChildren() - tree.getNodeName()
+          return FileTree.fromData(parentTree.getNode(),newCh,parentTree.getParent())
+        }
+        case None => throw new SubtreeException("Cannot remove the root of a tree")
+      }
+      case None => throw new SubtreeException("Subtree does not exist, cannot remove")
+    }
+  }
+  
+  def getHead():FileTree = {
+    parent match {
+      case Some(tree) => {
+        return tree.getHead()
+      }
+      case None => {
+        return this
+      }
+    }
+  }
+  
+  private def __removeSubtree(relPath:List[String]) = {
     getSubtree(relPath) match {
       case Some(tree) => tree.getParent() match {
         case Some(parentTree) => {
@@ -306,7 +362,7 @@ class FileTree() extends Byteable{
     return parent
   }
   
-  def rmChild(childName:String) = {
+  private def rmChild(childName:String) = {
     children -= childName
   }
   
@@ -333,10 +389,10 @@ class FileTree() extends Byteable{
     bos.close()
     output
   }
-  def makeRoot(f:File,isDir:Boolean):fileObj = {
+  private def makeRoot(f:File,isDir:Boolean):fileObj = {
     return fileObj(isDir,f.getName(),f.length)
   }
-  def makeRoot(f:Path,isDir:Boolean):fileObj = {
+  private def makeRoot(f:Path,isDir:Boolean):fileObj = {
     return fileObj(Files.isDirectory(f),f.getFileName().toString,Files.size(f))
   }
   

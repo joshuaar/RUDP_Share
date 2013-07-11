@@ -153,11 +153,11 @@ class rudpListener(s:Server) extends Actor{
         }
         
         case a:any => {
-          val matcher = "GeT:(.*):(.*)".r
-          a.msg match {
-            case getReq.matcher(a,b) => println("matched getreq")
-            case _ =>
-          }
+//          val matcher = "GeT:(.*):(.*)".r
+//          a.msg match {
+//            case getReq.matcher(a,b) => println("matched getreq")
+//            case _ =>
+//          }
           println("Received an unknown request: "+a.msg)
         }
       }

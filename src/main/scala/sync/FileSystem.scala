@@ -65,8 +65,8 @@ case class fileObj(isDirectory:Boolean,getName:String,length:Long) {
   }
 }
 
-case class SubtreeException(msg:String) extends Exception
-
+case class SubtreeException(e:String) extends Exception
+case class SubtreeRootException(e:String) extends Exception
 
 case class any(msg:String) extends Request {
   override def toString():String = {
@@ -219,6 +219,9 @@ class FileTree() extends Byteable{
   private var root = fileObj(false,"",0)
   private var children = Map[String,FileTree]()
   private var parent:Option[FileTree] = None
+  def setRoot(fObj:fileObj) = {
+    root = fObj
+  }
   def build(rt:fileObj,ch:Types.Children,pt:Option[FileTree]):Unit = {
     root=rt
     children=ch
@@ -372,7 +375,7 @@ class FileTree() extends Byteable{
         case Some(parentTree) => {
           parentTree.rmChild(tree.getNodeName())
         }
-        case None => throw new SubtreeException("Cannot remove the root of a tree")
+        case None => throw new SubtreeRootException("Cannot remove the root of a tree")
       }
       case None => throw new SubtreeException("Subtree does not exist, cannot remove")
     }

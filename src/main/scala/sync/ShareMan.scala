@@ -51,13 +51,11 @@ class ShareMan extends Actor {
       }
       return out
     }
-    
 
-    
     val share = myShares.matchShare(f.dir)
     println(myShares.getAll().map(_.getRoot))
     
-    println(f.dir)
+    println("fileEvent Directory: "+f.dir)
     
     share match {
       
@@ -74,7 +72,15 @@ class ShareMan extends Actor {
             println(ftshare.getFileTree().getNodeName)
             println(str2list(subTreeAddr))
             if(f.kind.equals("ENTRY_CREATE")){
-              val ft = FileTree.fromFileEvent(f)
+              val ft = try{
+            	  FileTree.fromFileEvent(f)
+              }
+              catch {
+                case e:SubtreeRootException => {
+                  println("subtree creation failed, ignoring this event")
+                  return 
+                }
+              }
             	ftshare.getFileTree().putSubtree(subTreeAddr, ft)
             	println(str2list(subTreeAddr))
             	println(ftshare.getFileTree().getSubtree(str2list(subTreeAddr)++List(f.fileName)))
@@ -82,14 +88,46 @@ class ShareMan extends Actor {
             	  
             		ft.ApplyToAllDirs(f.dir+File.separator+ft.getNodeName, (x:String)=>watcher.register(x))//Register change
             }
+            
             else if(f.kind.equals("ENTRY_DELETE")){
               val rmAddr = str2list(subTreeAddr)++List(f.fileName)
               println(rmAddr)
               val ft = ftshare.getFileTree().getSubtree(rmAddr)
-              
+              try{
               ft.get.ApplyToAllDirs(f.dir+File.separator+ft.get.getNodeName, (x:String)=>watcher.rm(x))//remove from watch service
-              
+              println("Entry deleted")
+              }
+              catch {
+                case e:java.util.NoSuchElementException => {
+                  println("watch deletion failed, ignoring this event")
+                  return
+                }
+              }
               ftshare.getFileTree().removeSubtree(rmAddr)
+            }
+            
+            else if(f.kind.equals("ENTRY_MODIFY")){
+              val modAddr = str2list(subTreeAddr)++List(f.fileName)
+              val st = ftshare.getFileTree().getSubtree(modAddr)
+              st match {
+                case Some(thing) => {
+                  println("Modifying Entry")
+                  try{
+                    
+                	  thing.setRoot(fileObj.fromPathString(f.dir+File.separator+f.fileName))
+                	  println("Entry has been modified")
+                  }
+                  catch {
+                    case e:FileObjException => {
+                      println("File does not exist, ignoring event. Entry should be deleted here?")
+                      return
+                    }
+                  }
+                  }
+                case None => {
+                  return
+                }
+              }
             }
             
             for(i<-subscribers)//Send the change to all subscribers
@@ -114,6 +152,7 @@ class ShareMan extends Actor {
     val future = Future{watcher.getNextChange()}
     future onSuccess {
       case x:List[fileEvent]=>{
+        println(x)
         for(i <- x) 
           handleEvent(i)
         self ! new getNext

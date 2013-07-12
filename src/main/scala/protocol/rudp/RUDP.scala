@@ -149,7 +149,8 @@ class rudpListener(s:Server) extends Actor{
         
         case ft:ftReq => {
           println("Received an ftRequest, handling")
-          s.sendShares(ShareMan.getShares())
+          throw new Exception("ftReq Handling not implimented")
+          //s.sendShares(ShareMan.getShares())
         }
         
         case a:any => {

@@ -1,9 +1,11 @@
 package share.sync
 import scala.collection.JavaConversions._
-import name.pachler.nio.file._;
+//import name.pachler.nio.file._;
+import java.nio.file._
 import java.io.IOException
+import java.io.File
 
-case class fileEvent(kind:String,dir:String,file:String)
+case class fileEvent(kind:String,dir:String,fileName:String)
 
 /**
  * Listens for local directory changes. Not recursive.
@@ -17,7 +19,7 @@ class LocalListener() {
   def register(path:String)={
     val watchedPath = Paths.get(path)
     var key = null.asInstanceOf[WatchKey]
-    key = watchedPath.register(watchService,StandardWatchEventKind.ENTRY_CREATE, StandardWatchEventKind.ENTRY_DELETE, StandardWatchEventKind.ENTRY_MODIFY)
+    key = watchedPath.register(watchService,StandardWatchEventKinds.ENTRY_CREATE, StandardWatchEventKinds.ENTRY_DELETE, StandardWatchEventKinds.ENTRY_MODIFY)
     watched += (path->key)
     watchedInv += (key->path)
   }
@@ -32,7 +34,7 @@ class LocalListener() {
       case None => 
     }
   }
-  
+  //fileEvent(ENTRY_CREATE,testies,/home/josh)
   def getNextChange():List[fileEvent] = {
     val signalledKey = watchService.take() // take event, blocks till event happens
     val events = signalledKey.pollEvents()
@@ -42,12 +44,12 @@ class LocalListener() {
       val kind = x.kind().toString()
       val file = x.context().toString()
       val dir = watchedInv.getOrElse(signalledKey,"")
-      fileEvent(kind,file,dir)
+      fileEvent(kind,dir,file)
     })
   }
 }
 
-object fileChanger{// extends App {
+object fileChanger extends App {
   val ll = new LocalListener()
   ll.register("/home/josh")
   while(true){

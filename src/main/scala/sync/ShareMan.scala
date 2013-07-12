@@ -1,42 +1,15 @@
 package share.sync
 import java.net._
+import share.protocol.rudp.api
 import akka.actor._
 import java.io._
 import scala.concurrent._
 import akka.pattern.ask
 import akka.util.Timeout
 import scala.concurrent.duration._
-import name.pachler.nio.file._
+//import name.pachler.nio.file._
 
 import scala.concurrent.stm._
-
-object ShareMan {
-  val myShares:Ref[Option[ShareContainer]] = Ref(None)
-  def getShares():ShareContainer = {
-    atomic { implicit txn =>
-      myShares() match {
-        case Some(d) => return d
-        case None => return new ShareContainer()
-      }
-    }
-  }
-  
-  def addShare(s:Share) = {
-    atomic { implicit txn =>
-      val oldShare = getShares()
-      val newShare = oldShare.add(s)
-      myShares() = Option(newShare)
-    }
-  }
-  def rmShare(s:Share) ={
-    atomic {implicit txn =>
-      val oldShare = getShares()
-      val newShare=oldShare.remove(s)
-      
-      myShares() = Option(newShare)
-    }
-  }
-}
 
 abstract class ShareManMsg
 case class mkShare(root:String,name:String) extends ShareManMsg {
@@ -52,18 +25,82 @@ case class mkSync(root:String,name:String) extends ShareManMsg {
     return new Share(ft,name,root,"Sync")
   }
 }
+case class getShareJSON() extends ShareManMsg//gets
 
-case class rmShare(s:Share) extends ShareManMsg
-case class getNext extends ShareManMsg
+case class rmShare(s:Share) extends ShareManMsg//gets
+
+case class getNext extends ShareManMsg//internal use
+
+case class shareMod(shareName:String,action:String,path:List[String])//emits
+
+case class subscribe(actor:ActorRef)//gets
+
 case class DirListenerException(msg:String) extends Exception
-class ShareMan(protocol:String) extends Actor {
+class ShareMan extends Actor {
   import context._
-  //val myShares = new ShareContainer()
+  var subscribers = Set[ActorRef]()
+  val myShares = new ShareContainer()
   val watcher = new LocalListener()
   self ! new getNext()
+  
   def handleEvent(f:fileEvent){
-    println(f)
+    implicit def str2list(s:String):List[String] = {
+      val out = s.split(File.separator).toList
+      if(out.head.equals("")){//For instances where the input has a leading / (/home/josh/stuff/whatever)
+        return out.tail
+      }
+      return out
+    }
     
+
+    
+    val share = myShares.matchShare(f.dir)
+    println(myShares.getAll().map(_.getRoot))
+    
+    println(f.dir)
+    
+    share match {
+      
+      case Some(ftshare) => {
+        
+        //ftshare.getRoot //the root of the share(should be a superdirectory f.dir)
+        println("matcher: "+ftshare.getRoot+"(.*)")
+        val matcher = (ftshare.getRoot+"(.*)").r
+        
+        f.dir match {
+          case matcher(suffix) =>{
+            val subTreeAddr = str2list(ftshare.getRoot).last + File.separator + str2list(suffix).mkString(File.separator)
+            
+            println(ftshare.getFileTree().getNodeName)
+            println(str2list(subTreeAddr))
+            if(f.kind.equals("ENTRY_CREATE")){
+              val ft = FileTree.fromFileEvent(f)
+            	ftshare.getFileTree().putSubtree(subTreeAddr, ft)
+            	println(str2list(subTreeAddr))
+            	println(ftshare.getFileTree().getSubtree(str2list(subTreeAddr)++List(f.fileName)))
+            	if(ftshare.getFileTree.getNode.isDirectory)//Register directory change
+            	  
+            		ft.ApplyToAllDirs(f.dir+File.separator+ft.getNodeName, (x:String)=>watcher.register(x))//Register change
+            }
+            else if(f.kind.equals("ENTRY_DELETE")){
+              val rmAddr = str2list(subTreeAddr)++List(f.fileName)
+              println(rmAddr)
+              val ft = ftshare.getFileTree().getSubtree(rmAddr)
+              
+              ft.get.ApplyToAllDirs(f.dir+File.separator+ft.get.getNodeName, (x:String)=>watcher.rm(x))//remove from watch service
+              
+              ftshare.getFileTree().removeSubtree(rmAddr)
+            }
+            
+            for(i<-subscribers)//Send the change to all subscribers
+              i ! shareMod(ftshare.getName,f.kind,f.dir)
+              }
+          }
+        }
+      
+      case None => throw new Exception("Share not found, cannot insert tree")
+      
+    	}
 //    val x = Shared.getShares()
 //    println(x.getAll.length)
 //    Shared.addShare(new Share(FileTree.fromString("/home/josh/Documents"),"","",""))
@@ -87,7 +124,10 @@ class ShareMan(protocol:String) extends Actor {
     }
     
     future onFailure {
-      case e => println("An error has occured with the watch service: "+e.getStackTraceString+e.getMessage())
+      case e => {
+        println("An error has occured with the watch service: ")
+        throw e
+        }
     }
   }
   
@@ -98,9 +138,19 @@ class ShareMan(protocol:String) extends Actor {
       //Register all directories with watch service
       share.getFileTree.ApplyToAllDirs(m.root,(x:String)=>watcher.register(x))
       println("adding share to collection")
-      ShareMan.addShare(share)
+      myShares.add(share)
       //watcher.register(m.root)
       println("finished adding share to collection")
+    }
+    
+    case g:getShareJSON => {
+      sender ! myShares.toString()
+    }
+    
+    
+    case subscribe(actor) => {
+      subscribers += actor
+      //sender ! myShares.toString()
     }
     
     case g:getNext => {
@@ -109,7 +159,7 @@ class ShareMan(protocol:String) extends Actor {
     
     case rmShare(s:Share) => {
       s.getFileTree.ApplyToAllDirs(s.getRoot, (x:String)=>watcher.rm(x))
-      ShareMan.rmShare(s)
+      myShares.remove(s)
       //watcher.rm(s.getRootDir())
       
     }
@@ -120,7 +170,7 @@ object shareManTest extends App {
   println("Creating test share")
   FileTree.fromString("/home/josh/Downloads")
   val system = ActorSystem("ShareMan")
-  val shares = system.actorOf(Props(new ShareMan("myProtocol")), name = "shareManTest")
+  val shares = system.actorOf(Props(new ShareMan()), name = "shareManTest")
   shares ! mkShare("/home/josh/Downloads","homeShare")
   Thread.sleep(5000)
 }

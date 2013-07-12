@@ -43,9 +43,20 @@ object ByteableFactory {
     output
   }
 }
+case class FileObjException(msg:String) extends Exception
 object fileObj {
   def fromList(l:List[Any]):fileObj = {
     return fileObj(l(0).asInstanceOf[Boolean],l(1).asInstanceOf[String],l(2).asInstanceOf[Double].toLong)
+  }
+  //this is slow, should not be used for initial build of file trees
+  def fromPathString(s:String):fileObj = {
+    val f = new File(s)
+    if(f.exists()){
+      return fileObj(f.isDirectory(),f.getName(),f.length())
+    }
+    else{
+      throw new FileObjException("Could not create file object, file does not exist")
+    }
   }
 }
 case class fileObj(isDirectory:Boolean,getName:String,length:Long) {
@@ -111,7 +122,7 @@ object ShareContainer extends reqFactory {
   def fromList(ls:List[Share]):ShareContainer = {
     var out = new ShareContainer
     for(i<-ls){
-      out = out.add(i)
+      out.add(i)
     }
     out
   }
@@ -142,14 +153,14 @@ class ShareContainer(var shares:Map[String,Share] = Map[String,Share]()) extends
   }
   
   implicit def map2ShCont(sh:Map[String,Share]) = (new ShareContainer(sh))
-  def add(res:Share):ShareContainer = {
-    shares + (res.getName -> res)
+  def add(res:Share) = {
+    shares += (res.getName -> res)
   }
-  def remove(res:Share):ShareContainer = {
-    shares - res.getName
+  def remove(res:Share) = {
+    shares -= res.getName
   }
-  def remove(res:String):ShareContainer  = {
-    shares - res
+  def remove(res:String)  = {
+    shares -= res
   }
   def getAll():List[Share] = {
     shares.values.toList
@@ -173,6 +184,11 @@ object FileTree {
   def fromFile(f:File,parent:Option[FileTree]):FileTree = {
     FileTree.fromString(f.getAbsolutePath())
   }
+  
+  def fromFileEvent(f:fileEvent):FileTree = {
+    fromString(f.dir + File.separator + f.fileName)
+  }
+  
   def fromPath($f: Path, parent:Option[FileTree] = None):FileTree = {
     val x = new FileTree()
     x.build($f,parent)
@@ -225,7 +241,7 @@ class FileTree() extends Byteable{
     }
     catch {
       case e: NoSuchFileException =>{
-        __removeSubtree(getNodeName()::Nil)
+        removeSubtree(getNodeName()::Nil)
         return
       }
     }
@@ -267,10 +283,13 @@ class FileTree() extends Byteable{
     catch {
       case e:NullPointerException => {
         println("Caught invalid directory")
-        __removeSubtree(getNodeName()::Nil)
+        removeSubtree(getNodeName()::Nil)
         return Map[String,FileTree]()
       }
     }
+  }
+  def setParent(ft:FileTree) = {
+    parent = Some(ft)
   }
   def buildChildren($f:Path): Types.Children = {
     try{
@@ -292,7 +311,7 @@ class FileTree() extends Byteable{
     catch {
       case e:NullPointerException => {
         println("Caught invalid directory")
-        __removeSubtree(getNodeName()::Nil)
+        removeSubtree(getNodeName()::Nil)
         return Map[String,FileTree]()
       }
     }
@@ -321,20 +340,6 @@ class FileTree() extends Byteable{
     return None
   }
   
-  def removeSubtree(relPath:List[String]):FileTree = {
-    throw new Exception("Doesnt work, tried to make immutable but no dice@")
-    getSubtree(relPath) match {
-      case Some(tree) => tree.getParent() match {
-        case Some(parentTree) => {
-          val newCh=parentTree.getChildren() - tree.getNodeName()
-          return FileTree.fromData(parentTree.getNode(),newCh,parentTree.getParent())
-        }
-        case None => throw new SubtreeException("Cannot remove the root of a tree")
-      }
-      case None => throw new SubtreeException("Subtree does not exist, cannot remove")
-    }
-  }
-  
   def getHead():FileTree = {
     parent match {
       case Some(tree) => {
@@ -346,7 +351,22 @@ class FileTree() extends Byteable{
     }
   }
   
-  private def __removeSubtree(relPath:List[String]) = {
+  def putSubtree(relPath:List[String],s:FileTree) = {
+    getSubtree(relPath) match {
+      case Some(tree) => {
+        if(tree.getNode().isDirectory){
+          tree.children = tree.children + (s.getNodeName->s)
+          s.setParent(tree)//set the subtrees parent
+        }
+        else{
+          throw new SubtreeException("Cannot add a tree to a non-directory rooted subtree")
+        }
+      }
+      case None => throw new SubtreeException("Subtree does not exist, cannot add")
+    }
+  }
+  
+  def removeSubtree(relPath:List[String]) = {
     getSubtree(relPath) match {
       case Some(tree) => tree.getParent() match {
         case Some(parentTree) => {

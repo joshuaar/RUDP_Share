@@ -4,7 +4,7 @@
     <list default="true" id="e88b4110-9a0f-4b17-ac62-afe4d908f1f1" name="Default" comment="" />
     <ignored path="peerUI.iws" />
     <ignored path=".idea/workspace.xml" />
-    <file path="/index.html" changelist="e88b4110-9a0f-4b17-ac62-afe4d908f1f1" time="1373954370467" ignored="false" />
+    <file path="/index.html" changelist="e88b4110-9a0f-4b17-ac62-afe4d908f1f1" time="1373957815883" ignored="false" />
     <option name="TRACKING_ENABLED" value="true" />
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -27,7 +27,7 @@
       <file leaf-file-name="index.html" pinned="false" current="true" current-in-tab="true">
         <entry file="file://$PROJECT_DIR$/index.html">
           <provider selected="true" editor-type-id="text-editor">
-            <state line="20" column="0" selection-start="477" selection-end="477" vertical-scroll-proportion="0.5242537">
+            <state line="8" column="4" selection-start="235" selection-end="235" vertical-scroll-proportion="0.21857923">
               <folding />
             </state>
           </provider>
@@ -210,7 +210,7 @@
   <component name="editorHistoryManager">
     <entry file="file://$PROJECT_DIR$/index.html">
       <provider selected="true" editor-type-id="text-editor">
-        <state line="20" column="0" selection-start="477" selection-end="477" vertical-scroll-proportion="0.5242537">
+        <state line="8" column="4" selection-start="235" selection-end="235" vertical-scroll-proportion="0.21857923">
           <folding />
         </state>
       </provider>

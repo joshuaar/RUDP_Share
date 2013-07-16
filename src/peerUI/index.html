@@ -5,38 +5,55 @@
 </head>
 <body>
 <div ng-controller="myController">
-
+    <a id="link-1" href ng-click="pi()">up</a><br>
+    / <ins ng-repeat="i in parent"><a href ng-click="ln($index)">{{i[1]}}</a> / </ins>
     <li ng-repeat="i in disp">
-        <a id="link-1" href ng-click="ch($index)">{{i.n}}</a> <br />
+        <a href ng-click="ch($index)">{{i.n}}</a> <br />
     </li>
     <br>
-    <a id="link-1" href ng-click="pi()">up</a> <br />
     <br>
     display Data<<br>
     {{disp}}<br>
     parent data<br>
-    {{parent}}
+    {{parent}}<br>
+    {{value}}
 </div>
 <input ng-model="value" /><br />
 
 <script>
     function myController($scope) {
-        $scope.tree = [{"n":"Dir1","dir":true,"ch":[{"n":"Dir1","dir":false,"ch":[]}]},{"n":"Dir2","dir":true,"ch":[{"n":"Dir1","dir":false,"ch":[]}]}]
+
+        //Get tree from client
+        $scope.tree = [{"n":"Dir1","dir":true,"ch":[{"n":"Dirnit","dir":true,"ch":[]}]},{"n":"Dir2","dir":true,"ch":[{"n":"Dir1","dir":false,"ch":[]}]}]
         $scope.parent = new Array()
+
+        //The thing that gets rendered by DOM
         $scope.disp = $scope.tree
+
         $scope.getChildren = function(i){
             $scope.disp = $scope.disp[i].ch
 
         }
 
+        //Children
         $scope.ch = function(idx){
-            $scope.parent.push($scope.disp)
-            $scope.disp = $scope.tree[idx].ch
-            $scope.value = $scope.tree[idx].ch
+            $scope.value = $scope.disp[idx].ch.length
+            if($scope.disp[idx].dir){
+            $scope.parent.push([$scope.disp,$scope.disp[idx].n])
+            $scope.disp = $scope.disp[idx].ch
+            }
         }
+        //Parents
         $scope.pi = function(){
-            $scope.disp = $scope.parent.pop()
+            if($scope.parent.length>0){
+            $scope.disp = $scope.parent.pop()[0]
+            }
 
+        }
+        //Backlinks (jump up parent stack)
+        $scope.ln=function(idx){
+           $scope.disp = $scope.parent[idx][0]
+           $scope.parent = $scope.parent.slice(0,idx)
         }
     }
 </script>

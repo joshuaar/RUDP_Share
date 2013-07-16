@@ -1,0 +1,44 @@
+<!doctype html>
+<html ng-app>
+<head>
+    <script src="https://ajax.googleapis.com/ajax/libs/angularjs/1.0.7/angular.js"></script>
+</head>
+<body>
+<div ng-controller="myController">
+
+    <li ng-repeat="i in disp">
+        <a id="link-1" href ng-click="ch($index)">{{i.n}}</a> <br />
+    </li>
+    <br>
+    <a id="link-1" href ng-click="pi()">up</a> <br />
+    <br>
+    display Data<<br>
+    {{disp}}<br>
+    parent data<br>
+    {{parent}}
+</div>
+<input ng-model="value" /><br />
+
+<script>
+    function myController($scope) {
+        $scope.tree = [{"n":"Dir1","dir":true,"ch":[{"n":"Dir1","dir":false,"ch":[]}]},{"n":"Dir2","dir":true,"ch":[{"n":"Dir1","dir":false,"ch":[]}]}]
+        $scope.parent = new Array()
+        $scope.disp = $scope.tree
+        $scope.getChildren = function(i){
+            $scope.disp = $scope.disp[i].ch
+
+        }
+
+        $scope.ch = function(idx){
+            $scope.parent.push($scope.disp)
+            $scope.disp = $scope.tree[idx].ch
+            $scope.value = $scope.tree[idx].ch
+        }
+        $scope.pi = function(){
+            $scope.disp = $scope.parent.pop()
+
+        }
+    }
+</script>
+</body>
+</html>

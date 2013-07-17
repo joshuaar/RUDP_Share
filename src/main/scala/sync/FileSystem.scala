@@ -617,10 +617,10 @@ object run extends App{
     return f
   }
   println("Making Filetree")
-  val a = FileTree.fromString("/home/josh/CIM/Research/labdata/jaricher")
+  val a = FileTree.fromString("/home/josh/CIM/Research/labdata/jaricher/newDecipher")
   println("Finished making filetree")
   val b = a.toJSON()
-  println(b.length)
+  println(b)
   val c = FileTree.fromJSON(b)
   //val c = a.toByteArray
   //println(c.length)

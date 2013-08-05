@@ -9,8 +9,8 @@ This is a work in progress. The goal is to enable a Dropbox-like service where f
 
 Undergoing new thread model ovhaul, much simpler than before. Will have:
 
--Signal thread: listens to requests and passes them off to...
--Worker thread: receives signals and processes them. This is where program state will be kept.
+- Signal thread: listens to requests and passes them off to...
+- Worker thread: receives signals and processes them. This is where program state will be kept.
 
 ##Features
 Can establish a connection and transfer files.

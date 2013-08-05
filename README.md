@@ -7,7 +7,10 @@ P2P file transfer across NATs using UDP.
 This is a work in progress. The goal is to enable a Dropbox-like service where files are stored and retreived on a user's 
 "always on" home computer. These files can be accessed anywhere, even if both client and server are behind NATs.
 
-Currently working on supporting file transfer resume...
+Undergoing new thread model ovhaul, much simpler than before. Will have:
+
+-Signal thread: listens to requests and passes them off to...
+-Worker thread: receives signals and processes them. This is where program state will be kept.
 
 ##Features
 Can establish a connection and transfer files.

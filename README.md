@@ -1,7 +1,7 @@
 RUDP_Share
 =======
 
-P2P file transfer across NATs using UDP.
+P2P file transfer across NATs using UDP. Incomplete, abandoned...
 
 ## Description
 This is a work in progress. The goal is to enable a Dropbox-like service where files are stored and retreived on a user's 
